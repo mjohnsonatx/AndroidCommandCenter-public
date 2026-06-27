@@ -18,6 +18,7 @@ public class AppSettings
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "acc_settings.json");
 
     public CiCdConfig CiCd { get; set; } = new();
+    public AutomationConfig Automation { get; set; } = new();
 
     public static AppSettings Load()
     {

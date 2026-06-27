@@ -17,6 +17,14 @@
 
     <DockPanel>
 
+        <Menu DockPanel.Dock="Top" Background="#181825" Foreground="#cdd6f4">
+            <MenuItem Header="_Automation" Background="#181825" Foreground="#cdd6f4">
+                <MenuItem Header="Configure Automated Deployment..." Click="AutomationConfig_Click" />
+                <Separator />
+                <MenuItem Header="Run Automated Deployment" Click="RunAutomatedDeployment_Click" />
+            </MenuItem>
+        </Menu>
+
         <!-- ═══ SELECTORS ═════════════════════════ -->
         <Border DockPanel.Dock="Top" Background="#181825" Padding="10,8">
             <Grid>

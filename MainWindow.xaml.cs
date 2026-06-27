@@ -18,11 +18,13 @@ public partial class MainWindow : Window
     private readonly ProcessRunner _runner = new();
     private readonly AndroidService _android;
     private readonly AvdManager _avd;
+    private readonly GitService _git;
     private readonly CacheManager _cache;
     private readonly WorkflowEngine _workflow = new();
     private readonly FlavorDetector _flavors = new();
     private readonly DashboardService _dashboard = new();
     private readonly TestReportService _testReports = new();
+    private readonly EmailNotificationService _emailNotifications = new();
     private readonly AppSettings _settings;
     private PipelineLogger? _pipelineLogger;
 
@@ -50,6 +52,7 @@ public partial class MainWindow : Window
 
         _android = new AndroidService(_runner);
         _avd = new AvdManager(_runner, _android.AdbPath, _android.EmulatorPath);
+        _git = new GitService(_runner);
         _cache = new CacheManager(_runner, _android);
 
         _firebase = new FirebaseService(_runner);
@@ -57,10 +60,12 @@ public partial class MainWindow : Window
 
         _runner.OutputReceived += line => Dispatcher.Invoke(() => Log(line));
         _avd.LogMessage += line => Dispatcher.Invoke(() => Log(line));
+        _git.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _cache.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _workflow.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _flavors.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _testReports.LogMessage += line => Dispatcher.Invoke(() => Log(line));
+        _emailNotifications.LogMessage += line => Dispatcher.Invoke(() => Log(line));
 
         _dashboard.StatsUpdated += s => Dispatcher.Invoke(() => UpdateDashboard(s));
         _dashboard.Start();
@@ -601,6 +606,53 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void AutomationConfig_Click(object s, RoutedEventArgs e)
+    {
+        var dlg = new AutomationWindow(_settings.Automation) { Owner = this };
+        if (dlg.ShowDialog() != true) return;
+
+        _settings.Save();
+        Log("Automation config saved.");
+
+        if (dlg.RunNow)
+            await RunAutomatedDeployment();
+    }
+
+    private async void RunAutomatedDeployment_Click(object s, RoutedEventArgs e) =>
+        await RunAutomatedDeployment();
+
+    private async Task RunAutomatedDeployment()
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        var automation = CloneAutomationConfig(_settings.Automation);
+        var cfg = CloneCiCdConfig(_settings.CiCd);
+        cfg.FailureAction = automation.FailureAction;
+
+        if (cfg.BuildVariants.Count == 0 && !string.IsNullOrWhiteSpace(_android.SelectedVariant))
+            cfg.BuildVariants = [_android.SelectedVariant];
+
+        if (!ValidateAutomatedDeploymentConfig(cfg, automation))
+            return;
+
+        PipelineRunResult result = await RunFullPipeline(
+            cfg,
+            async (logger, ct) =>
+            {
+                logger.Line($"Remote: {automation.RemoteName}");
+                logger.Line($"Branch: {automation.SourceBranch}");
+                int code = await _git.UpdateToRemoteBranch(
+                    _android.ProjectPath,
+                    automation.RemoteName,
+                    automation.SourceBranch,
+                    ct);
+                return code == 0;
+            },
+            "Automated Pipeline");
+
+        await SendAutomationNotification(automation, result);
+    }
+
     private async void FullPipeline_Click(object s, RoutedEventArgs e)
     {
         if (!RequireProject() || !RequireIdle()) return;
@@ -614,16 +666,130 @@ public partial class MainWindow : Window
         await RunFullPipeline(cfg);
     }
 
-    private async Task RunFullPipeline(CiCdConfig cfg)
+    private bool ValidateAutomatedDeploymentConfig(CiCdConfig cfg, AutomationConfig automation)
+    {
+        if (!cfg.IsSigningConfigured)
+        {
+            Log("[!] Automated deployment needs signing configured first.");
+            return false;
+        }
+
+        if (!cfg.IsFirebaseConfigured)
+        {
+            Log("[!] Automated deployment needs Firebase configured first.");
+            return false;
+        }
+
+        if (cfg.BuildVariants.Count == 0)
+        {
+            Log("[!] Automated deployment needs at least one build variant.");
+            return false;
+        }
+
+        if (automation.Email.SendEmail && !automation.CanSendEmail)
+        {
+            Log("[!] Automated deployment email settings are incomplete.");
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task SendAutomationNotification(AutomationConfig automation, PipelineRunResult result)
+    {
+        if (!automation.Email.SendEmail)
+        {
+            MessageBox.Show(
+                $"Automated deployment finished: {result.Status}\n\nLog:\n{result.LogPath}",
+                "Automated Deployment",
+                MessageBoxButton.OK,
+                result.Success ? MessageBoxImage.Information : MessageBoxImage.Warning);
+            return;
+        }
+
+        _isRunning = true;
+        SetStatus("Sending notification");
+        try
+        {
+            await _emailNotifications.SendPipelineLog(
+                automation,
+                ProjectName(),
+                result.Success,
+                result.Status,
+                result.LogPath,
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] Failed to send pipeline log email: {ex.Message}");
+        }
+        finally
+        {
+            _isRunning = false;
+            SetStatus("Idle");
+        }
+    }
+
+    private static CiCdConfig CloneCiCdConfig(CiCdConfig source) => new()
+    {
+        KeystorePath = source.KeystorePath,
+        KeyAlias = source.KeyAlias,
+        EncryptedStorePassword = source.EncryptedStorePassword,
+        EncryptedKeyPassword = source.EncryptedKeyPassword,
+        BuildVariants = source.BuildVariants.ToList(),
+        FirebaseCliPath = source.FirebaseCliPath,
+        FirebaseAppId = source.FirebaseAppId,
+        CredentialsJsonPath = source.CredentialsJsonPath,
+        EncryptedFirebaseToken = source.EncryptedFirebaseToken,
+        TesterGroups = source.TesterGroups,
+        TesterEmails = source.TesterEmails,
+        ReleaseNotes = source.ReleaseNotes,
+        RunUnitTests = source.RunUnitTests,
+        RunInstrumentTests = source.RunInstrumentTests,
+        FailureAction = source.FailureAction
+    };
+
+    private static AutomationConfig CloneAutomationConfig(AutomationConfig source) => new()
+    {
+        RemoteName = source.RemoteName,
+        SourceBranch = source.SourceBranch,
+        FailureAction = source.FailureAction,
+        Email = new EmailNotificationConfig
+        {
+            SendEmail = source.Email.SendEmail,
+            SmtpHost = source.Email.SmtpHost,
+            SmtpPort = source.Email.SmtpPort,
+            EnableSsl = source.Email.EnableSsl,
+            UserName = source.Email.UserName,
+            EncryptedPassword = source.Email.EncryptedPassword,
+            FromAddress = source.Email.FromAddress,
+            ToAddress = source.Email.ToAddress
+        }
+    };
+
+    private async Task<PipelineRunResult> RunFullPipeline(
+        CiCdConfig cfg,
+        Func<PipelineLogger, CancellationToken, Task<bool>>? preflight = null,
+        string statusText = "Full Pipeline")
     {
         var logger = new PipelineLogger("FP", ProjectName());
         _pipelineLogger = logger;
         _isRunning = true; _cts = new CancellationTokenSource();
-        SetStatus("Full Pipeline");
+        SetStatus(statusText);
         var ct = _cts.Token;
 
         try
         {
+            if (preflight != null)
+            {
+                logger.Section("SYNC SOURCE");
+                if (!await preflight(logger, ct))
+                {
+                    Log("[ABORT] Source update failed.");
+                    return new PipelineRunResult(false, "Source update failed", logger.FilePath);
+                }
+            }
+
             // ── Stop daemons ──
             logger.Section("STOP DAEMONS");
             await _android.StopDaemons(ct);
@@ -631,7 +797,10 @@ public partial class MainWindow : Window
             // ── Clean ──
             logger.Section("CLEAN");
             if (await _android.CleanBuild(ct) != 0)
-            { Log("[ABORT] Clean failed."); return; }
+            {
+                Log("[ABORT] Clean failed.");
+                return new PipelineRunResult(false, "Clean failed", logger.FilePath);
+            }
 
             // ── Unit tests ──
             if (cfg.RunUnitTests)
@@ -644,7 +813,10 @@ public partial class MainWindow : Window
 
                 if (report.Failed > 0 || code != 0)
                     if (!await HandleTestFailure("Unit Tests", report, cfg.FailureAction, logger))
-                    { Log("[ABORT] Stopped by failure policy."); return; }
+                    {
+                        Log("[ABORT] Stopped by failure policy.");
+                        return new PipelineRunResult(false, "Stopped after unit test failure", logger.FilePath);
+                    }
             }
 
             // ── Instrument tests ──
@@ -652,7 +824,11 @@ public partial class MainWindow : Window
             {
                 logger.Section("ENSURE EMULATOR");
                 string? serial = await PrepareInstrumentTestTarget(ct);
-                if (serial == null) { Log("[ABORT] No emulator."); return; }
+                if (serial == null)
+                {
+                    Log("[ABORT] No emulator.");
+                    return new PipelineRunResult(false, "No emulator available", logger.FilePath);
+                }
 
                 logger.Section("INSTRUMENT TESTS");
                 int code = await _android.RunInstrumentTests(ct);
@@ -662,17 +838,27 @@ public partial class MainWindow : Window
 
                 if (report.Failed > 0 || code != 0)
                     if (!await HandleTestFailure("Instrument Tests", report, cfg.FailureAction, logger))
-                    { Log("[ABORT] Stopped by failure policy."); return; }
+                    {
+                        Log("[ABORT] Stopped by failure policy.");
+                        return new PipelineRunResult(false, "Stopped after instrument test failure", logger.FilePath);
+                    }
             }
 
             // ── Build signed APK ──
             logger.Section("BUILD SIGNED APK");
             Log($"Variants: {string.Join(", ", cfg.BuildVariants)}");
             if (await _android.BuildSignedApk(cfg, cfg.BuildVariants, ct) != 0)
-            { Log("[ABORT] Build failed."); return; }
+            {
+                Log("[ABORT] Build failed.");
+                return new PipelineRunResult(false, "Build failed", logger.FilePath);
+            }
 
             var apk = FindApk();
-            if (apk == null) { Log("[ABORT] APK not found after build."); return; }
+            if (apk == null)
+            {
+                Log("[ABORT] APK not found after build.");
+                return new PipelineRunResult(false, "APK not found after build", logger.FilePath);
+            }
             Log($"APK: {apk}");
 
             // ── Deploy ──
@@ -684,9 +870,22 @@ public partial class MainWindow : Window
 
             Log(deploy == 0 ? "\nPIPELINE COMPLETE — deployed successfully!"
                             : "\nPIPELINE FINISHED — deploy returned non-zero.");
+
+            return new PipelineRunResult(
+                deploy == 0,
+                deploy == 0 ? "Deployed successfully" : $"Deploy returned {deploy}",
+                logger.FilePath);
         }
-        catch (OperationCanceledException) { Log("\nPipeline cancelled."); }
-        catch (Exception ex) { Log($"\n[ERROR] {ex.Message}"); }
+        catch (OperationCanceledException)
+        {
+            Log("\nPipeline cancelled.");
+            return new PipelineRunResult(false, "Pipeline cancelled", logger.FilePath);
+        }
+        catch (Exception ex)
+        {
+            Log($"\n[ERROR] {ex.Message}");
+            return new PipelineRunResult(false, ex.Message, logger.FilePath);
+        }
         finally
         {
             await RefreshDeviceList();
@@ -696,6 +895,8 @@ public partial class MainWindow : Window
             _isRunning = false; SetStatus("Idle");
         }
     }
+
+    private sealed record PipelineRunResult(bool Success, string Status, string LogPath);
 
     private async Task<bool> HandleTestFailure(
         string stage, TestReport report, TestFailureAction action, PipelineLogger logger)
