@@ -28,10 +28,15 @@ public class AndroidService
     // ── Signed APK build (one or more variants) ─
     public Task<int> BuildSignedApk(CiCdConfig config, IEnumerable<string> variants, CancellationToken ct)
     {
-        string tasks = string.Join(" ", variants.Select(v => $"assemble{v}"));
-        if (string.IsNullOrWhiteSpace(tasks)) tasks = "assembleRelease";
+        var selectedVariants = variants
+            .Where(v => !string.IsNullOrWhiteSpace(v))
+            .Select(v => v.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (selectedVariants.Count == 0)
+            throw new InvalidOperationException("Select at least one variant to build.");
 
-        string args = tasks;
+        string args = string.Join(" ", selectedVariants.Select(v => $"assemble{v}"));
         if (config.IsSigningConfigured)
         {
             args += $" -Pandroid.injected.signing.store.file=\"{config.KeystorePath}\"" +

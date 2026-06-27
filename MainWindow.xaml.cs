@@ -529,7 +529,7 @@ public partial class MainWindow : Window
         if (!RequireProject() || !RequireIdle()) return;
 
         var cfg = _settings.CiCd;
-        var dlg = new BuildSignedApkWindow(cfg, _variants) { Owner = this };
+        var dlg = new BuildSignedApkWindow(cfg, _variants, _android.SelectedVariant) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         _settings.Save();
 
@@ -564,12 +564,12 @@ public partial class MainWindow : Window
         if (!RequireProject() || !RequireIdle()) return;
 
         var cfg = _settings.CiCd;
-        var dlg = new DeployFirebaseWindow(cfg) { Owner = this };
+        var dlg = new DeployFirebaseWindow(cfg, FindApk()) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         _settings.Save();
 
-        var apk = FindApk();
-        if (apk == null) { Log("[!] No APK found. Run 'Build Signed APK' first."); return; }
+        var apk = dlg.ApkPath;
+        if (!File.Exists(apk)) { Log("[!] Select a valid APK file to deploy."); return; }
 
         var logger = new PipelineLogger("DEPLOY", ProjectName());
         _pipelineLogger = logger;
@@ -601,7 +601,7 @@ public partial class MainWindow : Window
         if (!RequireProject() || !RequireIdle()) return;
 
         var cfg = _settings.CiCd;
-        var dlg = new FullPipelineWindow(cfg, _variants) { Owner = this };
+        var dlg = new FullPipelineWindow(cfg, _variants, _android.SelectedVariant) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         _settings.Save();
         UpdateCiCdButtonStates();

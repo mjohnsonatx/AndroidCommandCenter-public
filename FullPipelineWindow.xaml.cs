@@ -10,7 +10,7 @@ public partial class FullPipelineWindow : Window
     private readonly CiCdConfig _cfg;
     private List<VariantChoice> _choices = new();
 
-    public FullPipelineWindow(CiCdConfig cfg, IEnumerable<string> availableVariants)
+    public FullPipelineWindow(CiCdConfig cfg, IEnumerable<string> availableVariants, string? activeVariant)
     {
         InitializeComponent();
         _cfg = cfg;
@@ -20,8 +20,14 @@ public partial class FullPipelineWindow : Window
         KeyAliasBox.Text = cfg.KeyAlias;
         KeyPassBox.Password = cfg.KeyPassword;
 
-        _choices = availableVariants
-            .Select(v => new VariantChoice { Name = v, IsSelected = cfg.BuildVariants.Contains(v) })
+        var variantList = availableVariants.ToList();
+        var selectedVariants =
+            !string.IsNullOrWhiteSpace(activeVariant) && variantList.Contains(activeVariant)
+                ? new HashSet<string>([activeVariant])
+                : new HashSet<string>(cfg.BuildVariants);
+
+        _choices = variantList
+            .Select(v => new VariantChoice { Name = v, IsSelected = selectedVariants.Contains(v) })
             .ToList();
         VariantList.ItemsSource = _choices;
 
