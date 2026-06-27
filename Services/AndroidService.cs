@@ -7,7 +7,8 @@ public class AndroidService
     private readonly ProcessRunner _runner;
 
     public string ProjectPath { get; set; } = "";
-    public string SelectedVariant { get; set; } = "Debug";   // e.g. "Debug", "FreeDebug"
+    public string SelectedVariant { get; set; } = "Debug";
+    public string? TargetDevice { get; set; }        // null = all connected
     public string SdkPath { get; }
     public string AdbPath { get; }
     public string EmulatorPath { get; }
@@ -22,7 +23,7 @@ public class AndroidService
 
     private string Gradlew => Path.Combine(ProjectPath, "gradlew.bat");
 
-    // ── Build (variant-aware) ──────────────────
+    // ── Build ──────────────────────────────────
     public Task<int> CleanBuild(CancellationToken ct) =>
         _runner.RunAsync(Gradlew, "clean", ProjectPath, ct);
 
@@ -32,12 +33,20 @@ public class AndroidService
     public Task<int> AssembleAll(CancellationToken ct) =>
         _runner.RunAsync(Gradlew, "assemble", ProjectPath, ct);
 
-    // ── Tests (variant-aware) ──────────────────
+    // ── Tests ──────────────────────────────────
     public Task<int> RunUnitTests(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, $"test{SelectedVariant}UnitTest", ProjectPath, ct);
+        _runner.RunAsync(
+            Gradlew, $"test{SelectedVariant}UnitTest", ProjectPath, ct);
 
     public Task<int> RunInstrumentTests(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, $"connected{SelectedVariant}AndroidTest", ProjectPath, ct);
+        _runner.RunAsync(
+            Gradlew,
+            $"connected{SelectedVariant}AndroidTest",
+            ProjectPath,
+            ct,
+            TargetDevice != null
+                ? new Dictionary<string, string> { ["ANDROID_SERIAL"] = TargetDevice }
+                : null);
 
     // ── Daemons / ADB ──────────────────────────
     public Task<int> StopDaemons(CancellationToken ct) =>

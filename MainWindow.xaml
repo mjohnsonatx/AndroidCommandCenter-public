@@ -2,7 +2,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Android Command Center"
-        Height="800"
+        Height="820"
         Width="1050"
         Background="#1e1e2e"
         WindowStartupLocation="CenterScreen">
@@ -18,9 +18,7 @@
     <DockPanel>
 
         <!-- ═══ SELECTORS ═════════════════════════ -->
-        <Border DockPanel.Dock="Top"
-                Background="#181825"
-                Padding="10,8">
+        <Border DockPanel.Dock="Top" Background="#181825" Padding="10,8">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
@@ -52,13 +50,11 @@
                            VerticalAlignment="Center" Margin="0,6,0,0" />
                 <ComboBox  Grid.Row="1" Grid.Column="1"
                            x:Name="VariantCombo"
-                           Style="{StaticResource DarkComboBox}"
-                           Margin="0,6,0,0"
+                           Style="{StaticResource DarkComboBox}" Margin="0,6,0,0"
                            SelectionChanged="VariantCombo_SelectionChanged" />
                 <StackPanel Grid.Row="1" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
                     <Button Content="Detect" Style="{StaticResource CmdButton}"
-                            Click="DetectVariants_Click"
-                            ToolTip="Auto-detect from build.gradle" />
+                            Click="DetectVariants_Click" ToolTip="Auto-detect from build.gradle" />
                 </StackPanel>
 
                 <!-- AVD -->
@@ -67,84 +63,100 @@
                            VerticalAlignment="Center" Margin="0,6,0,0" />
                 <ComboBox  Grid.Row="2" Grid.Column="1"
                            x:Name="AvdCombo"
-                           Style="{StaticResource DarkComboBox}"
-                           Margin="0,6,0,0"
+                           Style="{StaticResource DarkComboBox}" Margin="0,6,0,0"
                            SelectionChanged="AvdCombo_SelectionChanged" />
                 <StackPanel Grid.Row="2" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
                     <Button Content="Refresh" Style="{StaticResource CmdButton}"
-                            Click="RefreshAvds_Click"
-                            ToolTip="Reload AVD list" />
+                            Click="RefreshAvds_Click" ToolTip="Reload AVD list" />
                     <Button Content="Reports" Style="{StaticResource CmdButton}"
-                            Click="OpenReports_Click"
-                            ToolTip="Open saved test reports folder" />
+                            Click="OpenReports_Click" ToolTip="Open saved test reports" />
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- ═══ LIVE DASHBOARD ════════════════════ -->
-        <Border DockPanel.Dock="Top"
-                Background="#11111b"
-                Padding="12,10"
-                BorderBrush="#313244"
-                BorderThickness="0,0,0,1">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="170" />
-                    <ColumnDefinition Width="24" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="170" />
-                    <ColumnDefinition Width="40" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="40" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
+        <Border DockPanel.Dock="Top" Background="#11111b" Padding="12,10"
+                BorderBrush="#313244" BorderThickness="0,0,0,1">
+            <StackPanel>
 
-                <!-- CPU -->
-                <TextBlock Grid.Column="0" Text="CPU" Foreground="#6c7086"
-                           VerticalAlignment="Center" Margin="0,0,8,0" FontSize="13" />
-                <Grid Grid.Column="1">
-                    <ProgressBar x:Name="CpuBar" Style="{StaticResource DashBar}"
-                                 Value="0" Maximum="100" Foreground="#89b4fa" />
-                    <TextBlock   x:Name="CpuLabel" Text="0%" FontSize="11" FontWeight="Bold"
-                                 Foreground="#11111b"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <!-- Row 1: CPU / RAM / Java / Status -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="170" />
+                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="40" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="CPU" Foreground="#6c7086"
+                               VerticalAlignment="Center" Margin="0,0,8,0" FontSize="13" />
+                    <Grid Grid.Column="1">
+                        <ProgressBar x:Name="CpuBar" Style="{StaticResource DashBar}"
+                                     Value="0" Maximum="100" Foreground="#89b4fa" />
+                        <TextBlock   x:Name="CpuLabel" Text="0%" FontSize="11" FontWeight="Bold"
+                                     Foreground="#11111b"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <TextBlock Grid.Column="3" Text="RAM" Foreground="#6c7086"
+                               VerticalAlignment="Center" Margin="0,0,8,0" FontSize="13" />
+                    <Grid Grid.Column="4">
+                        <ProgressBar x:Name="MemBar" Style="{StaticResource DashBar}"
+                                     Value="0" Maximum="100" Foreground="#a6e3a1" />
+                        <TextBlock   x:Name="MemLabel" Text="0 MB" FontSize="11" FontWeight="Bold"
+                                     Foreground="#11111b"
+                                     HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+
+                    <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="Java: " Foreground="#a6adc8" FontSize="14" />
+                        <TextBlock x:Name="DaemonLabel" Text="0" Foreground="#f9e2af"
+                                   FontWeight="Bold" FontSize="14" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="8" Orientation="Horizontal"
+                                VerticalAlignment="Center" HorizontalAlignment="Right">
+                        <TextBlock Text="Status: " Foreground="#a6adc8" FontSize="14" />
+                        <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="#a6e3a1"
+                                   FontWeight="Bold" FontSize="14" />
+                    </StackPanel>
                 </Grid>
 
-                <!-- RAM -->
-                <TextBlock Grid.Column="3" Text="RAM" Foreground="#6c7086"
-                           VerticalAlignment="Center" Margin="0,0,8,0" FontSize="13" />
-                <Grid Grid.Column="4">
-                    <ProgressBar x:Name="MemBar" Style="{StaticResource DashBar}"
-                                 Value="0" Maximum="100" Foreground="#a6e3a1" />
-                    <TextBlock   x:Name="MemLabel" Text="0 MB" FontSize="11" FontWeight="Bold"
-                                 Foreground="#11111b"
-                                 HorizontalAlignment="Center" VerticalAlignment="Center" />
+                <!-- Row 2: Target device + Connected devices -->
+                <Grid Margin="0,8,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="220" />
+                        <ColumnDefinition Width="24" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="Target:" Foreground="#a6adc8"
+                               FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <ComboBox  Grid.Column="1" x:Name="DeviceCombo"
+                               Style="{StaticResource DarkComboBox}"
+                               SelectionChanged="DeviceCombo_SelectionChanged" />
+
+                    <TextBlock Grid.Column="3" Text="Connected:" Foreground="#a6adc8"
+                               FontSize="14" VerticalAlignment="Center" Margin="0,0,8,0" />
+                    <TextBlock Grid.Column="4" x:Name="DeviceListLabel"
+                               Text="(scanning...)" Foreground="#cdd6f4"
+                               FontSize="14" VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
                 </Grid>
 
-                <!-- Java / daemon count -->
-                <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="Java: " Foreground="#a6adc8" FontSize="14" />
-                    <TextBlock x:Name="DaemonLabel" Text="0" Foreground="#f9e2af"
-                               FontWeight="Bold" FontSize="14" />
-                </StackPanel>
-
-                <!-- Status -->
-                <StackPanel Grid.Column="8" Orientation="Horizontal"
-                            VerticalAlignment="Center" HorizontalAlignment="Right">
-                    <TextBlock Text="Status: " Foreground="#a6adc8" FontSize="14" />
-                    <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="#a6e3a1"
-                               FontWeight="Bold" FontSize="14" />
-                </StackPanel>
-            </Grid>
+            </StackPanel>
         </Border>
 
         <!-- ═══ COMMAND BUTTONS ═══════════════════ -->
-        <ScrollViewer DockPanel.Dock="Top"
-                      VerticalScrollBarVisibility="Auto"
-                      MaxHeight="260">
+        <ScrollViewer DockPanel.Dock="Top" VerticalScrollBarVisibility="Auto" MaxHeight="260">
             <WrapPanel Margin="4">
-
                 <GroupBox Header="Build">
                     <WrapPanel>
                         <Button Content="Clean"      Style="{StaticResource CmdButton}" Click="Clean_Click" />
@@ -153,59 +165,47 @@
                         <Button Content="List Tasks" Style="{StaticResource CmdButton}" Click="ListTasks_Click" />
                     </WrapPanel>
                 </GroupBox>
-
                 <GroupBox Header="Tests">
                     <WrapPanel>
                         <Button Content="Unit Tests"       Style="{StaticResource CmdButton}" Click="UnitTests_Click" />
                         <Button Content="Instrument Tests" Style="{StaticResource CmdButton}" Click="InstrumentTests_Click"
-                                ToolTip="Starts selected AVD if needed, then runs connected tests" />
+                                ToolTip="Starts selected AVD if needed, targets selected device" />
                     </WrapPanel>
                 </GroupBox>
-
                 <GroupBox Header="Environment">
                     <WrapPanel>
-                        <Button Content="List Devices"  Style="{StaticResource CmdButton}" Click="Devices_Click" />
-                        <Button Content="Start AVD"     Style="{StaticResource CmdButton}" Click="StartAvd_Click" />
-                        <Button Content="Stop Daemons"  Style="{StaticResource CmdButton}" Click="StopDaemons_Click" />
-                        <Button Content="Restart ADB"   Style="{StaticResource CmdButton}" Click="RestartAdb_Click" />
+                        <Button Content="List Devices" Style="{StaticResource CmdButton}" Click="Devices_Click" />
+                        <Button Content="Start AVD"    Style="{StaticResource CmdButton}" Click="StartAvd_Click" />
+                        <Button Content="Stop Daemons" Style="{StaticResource CmdButton}" Click="StopDaemons_Click" />
+                        <Button Content="Restart ADB"  Style="{StaticResource CmdButton}" Click="RestartAdb_Click" />
                     </WrapPanel>
                 </GroupBox>
-
                 <GroupBox Header="Cache Invalidation">
                     <WrapPanel>
-                        <Button Content="Light Clean"     Style="{StaticResource CmdButton}" Click="CacheLight_Click"  ToolTip="Stop daemons + delete build dirs" />
-                        <Button Content="Medium Clean"    Style="{StaticResource CmdButton}" Click="CacheMedium_Click" ToolTip="+ project .gradle, lock files, .idea caches" />
-                        <Button Content="Heavy Clean"     Style="{StaticResource CmdButton}" Click="CacheHeavy_Click"  ToolTip="+ global gradle caches (re-downloads deps!)" />
+                        <Button Content="Light Clean"     Style="{StaticResource CmdButton}" Click="CacheLight_Click" />
+                        <Button Content="Medium Clean"    Style="{StaticResource CmdButton}" Click="CacheMedium_Click" />
+                        <Button Content="Heavy Clean"     Style="{StaticResource CmdButton}" Click="CacheHeavy_Click" />
                         <Button Content="Lock Files Only" Style="{StaticResource CmdButton}" Click="CleanLocks_Click" />
                     </WrapPanel>
                 </GroupBox>
-
                 <GroupBox Header="Workflows">
                     <WrapPanel>
                         <Button Content="Full Test Run" Style="{StaticResource CmdButton}" Click="FullTestRun_Click"
                                 FontWeight="Bold" Background="#1e66f5" Foreground="White" />
-                        <Button Content="Cancel"        Style="{StaticResource CmdButton}" Click="Cancel_Click"
+                        <Button Content="Cancel"    Style="{StaticResource CmdButton}" Click="Cancel_Click"
                                 Background="#e64553" Foreground="White" />
-                        <Button Content="Clear Log"     Style="{StaticResource CmdButton}" Click="ClearLog_Click" />
+                        <Button Content="Clear Log" Style="{StaticResource CmdButton}" Click="ClearLog_Click" />
                     </WrapPanel>
                 </GroupBox>
-
             </WrapPanel>
         </ScrollViewer>
 
-        <!-- ═══ LOG OUTPUT ════════════════════════ -->
+        <!-- ═══ LOG ═══════════════════════════════ -->
         <Border Margin="8" BorderBrush="#45475a" BorderThickness="1" CornerRadius="4">
-            <TextBox x:Name="LogBox"
-                     IsReadOnly="True"
-                     VerticalScrollBarVisibility="Auto"
-                     HorizontalScrollBarVisibility="Auto"
-                     FontFamily="Consolas"
-                     FontSize="12"
-                     TextWrapping="NoWrap"
-                     Background="#11111b"
-                     Foreground="#a6adc8"
-                     BorderThickness="0"
-                     Padding="8" />
+            <TextBox x:Name="LogBox" IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
+                     Background="#11111b" Foreground="#a6adc8" BorderThickness="0" Padding="8" />
         </Border>
 
     </DockPanel>

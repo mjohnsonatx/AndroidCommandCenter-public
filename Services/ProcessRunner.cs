@@ -12,7 +12,8 @@ public class ProcessRunner
         string fileName,
         string arguments,
         string workingDirectory,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Dictionary<string, string>? envVars = null)
     {
         var psi = new ProcessStartInfo
         {
@@ -26,6 +27,10 @@ public class ProcessRunner
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
+
+        if (envVars != null)
+            foreach (var (key, val) in envVars)
+                psi.Environment[key] = val;
 
         using var process = new Process { StartInfo = psi, EnableRaisingEvents = true };
 
@@ -42,11 +47,10 @@ public class ProcessRunner
         process.BeginOutputReadLine();
         process.BeginErrorReadLine();
 
-        // Kill the whole process tree if the user cancels
         using (ct.Register(() =>
         {
             try { if (!process.HasExited) process.Kill(entireProcessTree: true); }
-            catch { /* already dead */ }
+            catch { }
         }))
         {
             await process.WaitForExitAsync(ct);
@@ -55,15 +59,12 @@ public class ProcessRunner
         return process.ExitCode;
     }
 
-    /// <summary>
-    /// Runs a process, streams output to OutputReceived AND returns the full text.
-    /// Used when we need to parse the output (device list, AVD names, etc.)
-    /// </summary>
     public async Task<(int ExitCode, string Output)> RunAndCaptureAsync(
         string fileName,
         string arguments,
         string workingDirectory,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        Dictionary<string, string>? envVars = null)
     {
         var lines = new ConcurrentQueue<string>();
         void handler(string line) => lines.Enqueue(line);
@@ -71,7 +72,7 @@ public class ProcessRunner
         OutputReceived += handler;
         try
         {
-            int code = await RunAsync(fileName, arguments, workingDirectory, ct);
+            int code = await RunAsync(fileName, arguments, workingDirectory, ct, envVars);
             return (code, string.Join(Environment.NewLine, lines));
         }
         finally
