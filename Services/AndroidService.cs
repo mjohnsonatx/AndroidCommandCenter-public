@@ -65,7 +65,9 @@ public class AndroidService
     public Task<int> RunInstrumentTests(CancellationToken ct) =>
         _runner.RunAsync(
             Gradlew,
-            $"connected{SelectedVariant}AndroidTest",
+            TargetDevice != null
+                ? $"connected{SelectedVariant}AndroidTest -Pandroid.injected.connected.device.serial={TargetDevice}"
+                : $"connected{SelectedVariant}AndroidTest",
             ProjectPath,
             ct,
             TargetDevice != null

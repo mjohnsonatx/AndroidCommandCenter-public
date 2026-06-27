@@ -317,23 +317,8 @@ public partial class MainWindow : Window
         {
             if (ensureEmulator)
             {
-                Log("Ensuring emulator is running...");
-                string? serial = await _avd.EnsureEmulatorRunning(
-                    _settings.PreferredAvd, _cts.Token);
-
-                if (serial == null)
-                {
-                    Log("[ERROR] No emulator available. Aborting.");
-                    return;
-                }
-
-                // Auto-target the emulator so tests don't also run on physical devices
-                _android.TargetDevice = serial;
-                await RefreshDeviceList();
-                if (_deviceSerials.Contains(serial))
-                    DeviceCombo.SelectedItem = serial;
-
-                Log($"Targeting device: {serial}");
+                string? serial = await PrepareInstrumentTestTarget(_cts.Token);
+                if (serial == null) return;
             }
 
             Log($"\n===== {testType} ({_android.SelectedVariant}) =====");
@@ -357,6 +342,27 @@ public partial class MainWindow : Window
             _isRunning = false;
             SetStatus("Idle");
         }
+    }
+
+    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct)
+    {
+        Log("Ensuring emulator is ready for instrument tests...");
+        string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
+
+        if (serial == null)
+        {
+            Log("[ERROR] No emulator available for instrument tests. Aborting.");
+            return null;
+        }
+
+        // Auto-target the emulator so connected tests do not drift to physical devices.
+        _android.TargetDevice = serial;
+        await RefreshDeviceList();
+        if (_deviceSerials.Contains(serial))
+            DeviceCombo.SelectedItem = serial;
+
+        Log($"Targeting instrument tests to emulator: {serial}");
+        return serial;
     }
 
     private void ShowSummary(TestReport report)
@@ -470,9 +476,8 @@ public partial class MainWindow : Window
             new() { Name = "Ensure Emulator",
                     Action = async ct =>
                     {
-                        string? serial = await _avd.EnsureEmulatorRunning(_settings.PreferredAvd, ct);
+                        string? serial = await PrepareInstrumentTestTarget(ct);
                         if (serial == null) return 1;
-                        _android.TargetDevice = serial;
                         return 0;
                     }},
             new() { Name = $"Instrumented Tests ({v})",
@@ -646,9 +651,8 @@ public partial class MainWindow : Window
             if (cfg.RunInstrumentTests)
             {
                 logger.Section("ENSURE EMULATOR");
-                string? serial = await _avd.EnsureEmulatorRunning(_settings.PreferredAvd, ct);
+                string? serial = await PrepareInstrumentTestTarget(ct);
                 if (serial == null) { Log("[ABORT] No emulator."); return; }
-                _android.TargetDevice = serial;
 
                 logger.Section("INSTRUMENT TESTS");
                 int code = await _android.RunInstrumentTests(ct);
