@@ -1,0 +1,25 @@
+﻿<Window x:Class="AndroidCommandCenter.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Android Command Center" Height="600" Width="900">
+    <DockPanel>
+        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
+            <TextBlock Text="Project:" VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBox x:Name="ProjectBox" Width="500" IsReadOnly="True"/>
+            <Button Content="Browse..." Click="Browse_Click" Margin="6,0"/>
+        </StackPanel>
+
+        <WrapPanel DockPanel.Dock="Top" Margin="8">
+            <Button Content="Clean Build"      Click="Clean_Click"      Margin="4" Padding="8,4"/>
+            <Button Content="Unit Tests"       Click="UnitTests_Click"  Margin="4" Padding="8,4"/>
+            <Button Content="Instrument Tests" Click="Instrument_Click" Margin="4" Padding="8,4"/>
+            <Button Content="Stop Daemons"     Click="StopDaemons_Click"Margin="4" Padding="8,4"/>
+            <Button Content="List Devices"     Click="Devices_Click"    Margin="4" Padding="8,4"/>
+            <Button Content="Cancel"           Click="Cancel_Click"     Margin="4" Padding="8,4"/>
+        </WrapPanel>
+
+        <TextBox x:Name="LogBox" Margin="8" IsReadOnly="True"
+                 VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
+                 TextWrapping="NoWrap" Background="#1e1e1e" Foreground="#d4d4d4"/>
+    </DockPanel>
+</Window>
