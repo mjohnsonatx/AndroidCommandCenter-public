@@ -17,6 +17,8 @@ public class AppSettings
     private static string FilePath =>
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "acc_settings.json");
 
+    public CiCdConfig CiCd { get; set; } = new();
+
     public static AppSettings Load()
     {
         try

@@ -1,4 +1,5 @@
-﻿using System.IO;
+﻿using AndroidCommandCenter.Models;
+using System.IO;
 
 namespace AndroidCommandCenter.Services;
 
@@ -22,6 +23,20 @@ public class AndroidService
     }
 
     private string Gradlew => Path.Combine(ProjectPath, "gradlew.bat");
+
+    // ── Signed release build ───────────────────
+    public Task<int> BuildSignedRelease(CiCdConfig config, CancellationToken ct)
+    {
+        string args = "assembleRelease";
+        if (config.IsSigningConfigured)
+        {
+            args += $" -Pandroid.injected.signing.store.file=\"{config.KeystorePath}\"" +
+                    $" -Pandroid.injected.signing.store.password={config.StorePassword}" +
+                    $" -Pandroid.injected.signing.key.alias={config.KeyAlias}" +
+                    $" -Pandroid.injected.signing.key.password={config.KeyPassword}";
+        }
+        return _runner.RunAsync(Gradlew, args, ProjectPath, ct);
+    }
 
     // ── Build ──────────────────────────────────
     public Task<int> CleanBuild(CancellationToken ct) =>

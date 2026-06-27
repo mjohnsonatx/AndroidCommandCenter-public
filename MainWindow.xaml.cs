@@ -1,16 +1,19 @@
-﻿using System.Collections.ObjectModel;
+﻿using AndroidCommandCenter.Models;
+using AndroidCommandCenter.Services;
+using System.Collections.ObjectModel;
+using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
-using AndroidCommandCenter.Models;
-using AndroidCommandCenter.Services;
 
 namespace AndroidCommandCenter;
 
 public partial class MainWindow : Window
 {
+    private readonly FirebaseService _firebase;
+
     // ── Services ─────────────────────────────────
     private readonly ProcessRunner _runner = new();
     private readonly AndroidService _android;
@@ -47,6 +50,9 @@ public partial class MainWindow : Window
         _android = new AndroidService(_runner);
         _avd = new AvdManager(_runner, _android.AdbPath, _android.EmulatorPath);
         _cache = new CacheManager(_runner, _android);
+
+        _firebase = new FirebaseService(_runner);
+        _firebase.LogMessage += line => Dispatcher.Invoke(() => Log(line));
 
         _runner.OutputReceived += line => Dispatcher.Invoke(() => Log(line));
         _avd.LogMessage += line => Dispatcher.Invoke(() => Log(line));
@@ -485,6 +491,169 @@ public partial class MainWindow : Window
         catch (OperationCanceledException) { Log("\nWorkflow cancelled."); }
         catch (Exception ex) { Log($"\n[ERROR] {ex.Message}"); }
         finally { _isRunning = false; SetStatus("Idle"); }
+    }
+
+    // ═══════════════════════════════════════════════
+    //  CI/CD
+    // ═══════════════════════════════════════════════
+
+    private void CiCdSettings_Click(object s, RoutedEventArgs e)
+    {
+        var dlg = new CiCdSettingsWindow(_settings.CiCd) { Owner = this };
+        if (dlg.ShowDialog() == true)
+        {
+            _firebase.CliPath = _settings.CiCd.FirebaseCliPath;
+            _settings.Save();
+            Log("CI/CD settings saved.");
+        }
+    }
+
+    private async void BuildSigned_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        var cfg = _settings.CiCd;
+        if (!cfg.IsSigningConfigured)
+        {
+            Log("[!] Signing not configured. Click CI/CD → Settings first.");
+            // Open the dialog for convenience
+            CiCdSettings_Click(s, e);
+            return;
+        }
+
+        _isRunning = true; _cts = new CancellationTokenSource();
+        SetStatus("Build Signed APK");
+        Log("\n===== Building Signed Release APK =====");
+
+        try
+        {
+            int code = await _android.BuildSignedRelease(cfg, _cts.Token);
+            Log($"===== Build exit {code} =====");
+
+            if (code == 0)
+            {
+                string? apk = FindApk();
+                Log(apk != null ? $"APK ready: {apk}" : "[WARN] Could not locate APK.");
+            }
+        }
+        catch (OperationCanceledException) { Log("Cancelled."); }
+        catch (Exception ex) { Log($"[ERROR] {ex.Message}"); }
+        finally { _isRunning = false; SetStatus("Idle"); }
+    }
+
+    private async void DeployFirebase_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        var cfg = _settings.CiCd;
+        if (!cfg.IsFirebaseConfigured)
+        {
+            Log("[!] Firebase not configured. Click CI/CD → Settings first.");
+            CiCdSettings_Click(s, e);
+            return;
+        }
+
+        string? apk = FindApk();
+        if (apk == null)
+        {
+            Log("[!] No APK found. Run 'Build Signed APK' first.");
+            return;
+        }
+
+        _isRunning = true; _cts = new CancellationTokenSource();
+        SetStatus("Deploying");
+        Log($"\n===== Deploying to Firebase =====");
+        Log($"APK: {apk}");
+
+        try
+        {
+            int code = await _firebase.Distribute(
+                apk, cfg.FirebaseAppId, cfg.DistributionGroups,
+                cfg.ReleaseNotes, cfg.FirebaseToken, cfg.ServiceAccountPath,
+                _cts.Token);
+            Log($"===== Deploy exit {code} =====");
+            if (code == 0) Log("Upload successful!");
+        }
+        catch (OperationCanceledException) { Log("Cancelled."); }
+        catch (Exception ex) { Log($"[ERROR] {ex.Message}"); }
+        finally { _isRunning = false; SetStatus("Idle"); }
+    }
+
+    private async void FullPipeline_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        var cfg = _settings.CiCd;
+        if (!cfg.IsSigningConfigured || !cfg.IsFirebaseConfigured)
+        {
+            Log("[!] CI/CD not fully configured. Opening settings...");
+            CiCdSettings_Click(s, e);
+            return;
+        }
+
+        _isRunning = true; _cts = new CancellationTokenSource();
+        SetStatus("CI/CD Pipeline");
+
+        string v = _android.SelectedVariant;
+        var steps = new List<WorkflowStep>
+        {
+            new() { Name = "Stop Daemons",
+                    Action = _android.StopDaemons, StopOnFailure = false },
+            new() { Name = "Clean",
+                    Action = _android.CleanBuild },
+            new() { Name = $"Unit Tests ({v})",
+                    Action = _android.RunUnitTests, MaxRetries = 2 },
+            new() { Name = "Ensure Emulator",
+                    Action = async ct =>
+                    {
+                        var serial = await _avd.EnsureEmulatorRunning(_settings.PreferredAvd, ct);
+                        if (serial == null) return 1;
+                        _android.TargetDevice = serial;
+                        return 0;
+                    }},
+            new() { Name = $"Instrumented Tests ({v})",
+                    Action = _android.RunInstrumentTests, MaxRetries = 2 },
+            new() { Name = "Build Signed APK",
+                    Action = ct => _android.BuildSignedRelease(cfg, ct) },
+            new() { Name = "Deploy to Firebase",
+                    Action = async ct =>
+                    {
+                        string? apk = FindApk();
+                        if (apk == null) { Log("[ERROR] APK not found."); return 1; }
+                        Log($"APK: {apk}");
+                        return await _firebase.Distribute(
+                            apk, cfg.FirebaseAppId, cfg.DistributionGroups,
+                            cfg.ReleaseNotes, cfg.FirebaseToken,
+                            cfg.ServiceAccountPath, ct);
+                    }}
+        };
+
+        try
+        {
+            bool ok = await _workflow.ExecuteAsync("CI/CD Pipeline", steps, _cts.Token);
+
+            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
+            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+            if (unit.Total > 0) { ShowSummary(unit); _testReports.SaveReport(unit, _android.ProjectPath, v, "(pipeline)"); }
+            if (inst.Total > 0) { ShowSummary(inst); _testReports.SaveReport(inst, _android.ProjectPath, v, "(pipeline)"); }
+
+            await RefreshDeviceList();
+            Log(ok ? "\nPipeline completed successfully!" : "\nPipeline had failures.");
+        }
+        catch (OperationCanceledException) { Log("\nPipeline cancelled."); }
+        catch (Exception ex) { Log($"\n[ERROR] {ex.Message}"); }
+        finally { _isRunning = false; SetStatus("Idle"); }
+    }
+
+    private string? FindApk()
+    {
+        var root = Path.Combine(_android.ProjectPath, "app", "build", "outputs", "apk");
+        if (!Directory.Exists(root)) return null;
+
+        return Directory.GetFiles(root, "*.apk", SearchOption.AllDirectories)
+            .Where(f => !Path.GetFileName(f).Contains("unsigned"))
+            .OrderByDescending(File.GetLastWriteTime)
+            .FirstOrDefault();
     }
 
     // ═══════════════════════════════════════════════
