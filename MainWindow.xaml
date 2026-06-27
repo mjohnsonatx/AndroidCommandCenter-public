@@ -1,25 +1,193 @@
 ﻿<Window x:Class="AndroidCommandCenter.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Android Command Center" Height="600" Width="900">
+        Title="Android Command Center"
+        Height="700"
+        Width="1000"
+        Background="#1e1e2e"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <Style x:Key="CmdButton" TargetType="Button">
+            <Setter Property="Margin"           Value="4" />
+            <Setter Property="Padding"          Value="12,6" />
+            <Setter Property="FontSize"         Value="12" />
+            <Setter Property="Foreground"       Value="#cdd6f4" />
+            <Setter Property="Background"       Value="#313244" />
+            <Setter Property="BorderBrush"      Value="#45475a" />
+            <Setter Property="BorderThickness"  Value="1" />
+            <Setter Property="Cursor"           Value="Hand" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="3"
+                                Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center"
+                                              VerticalAlignment="Center" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd"
+                                        Property="Opacity"
+                                        Value="0.8" />
+                            </Trigger>
+                            <Trigger Property="IsPressed" Value="True">
+                                <Setter TargetName="bd"
+                                        Property="Opacity"
+                                        Value="0.6" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="GroupBox">
+            <Setter Property="Foreground"       Value="#cdd6f4" />
+            <Setter Property="BorderBrush"      Value="#45475a" />
+            <Setter Property="Margin"           Value="4" />
+            <Setter Property="Padding"          Value="4" />
+        </Style>
+    </Window.Resources>
+
     <DockPanel>
-        <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="8">
-            <TextBlock Text="Project:" VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBox x:Name="ProjectBox" Width="500" IsReadOnly="True"/>
-            <Button Content="Browse..." Click="Browse_Click" Margin="6,0"/>
-        </StackPanel>
 
-        <WrapPanel DockPanel.Dock="Top" Margin="8">
-            <Button Content="Clean Build"      Click="Clean_Click"      Margin="4" Padding="8,4"/>
-            <Button Content="Unit Tests"       Click="UnitTests_Click"  Margin="4" Padding="8,4"/>
-            <Button Content="Instrument Tests" Click="Instrument_Click" Margin="4" Padding="8,4"/>
-            <Button Content="Stop Daemons"     Click="StopDaemons_Click"Margin="4" Padding="8,4"/>
-            <Button Content="List Devices"     Click="Devices_Click"    Margin="4" Padding="8,4"/>
-            <Button Content="Cancel"           Click="Cancel_Click"     Margin="4" Padding="8,4"/>
-        </WrapPanel>
+        <!-- ── PROJECT SELECTOR ─────────────────────── -->
+        <Border DockPanel.Dock="Top"
+                Background="#181825"
+                Padding="8">
+            <StackPanel Orientation="Horizontal">
+                <TextBlock Text="Project:"
+                           Foreground="#cdd6f4"
+                           VerticalAlignment="Center"
+                           Margin="0,0,8,0"
+                           FontWeight="Bold" />
+                <ComboBox x:Name="ProjectCombo"
+                          Width="550"
+                          SelectionChanged="ProjectCombo_SelectionChanged" />
+                <Button Content="+ Add Project"
+                        Style="{StaticResource CmdButton}"
+                        Click="AddProject_Click" />
+                <Button Content="- Remove"
+                        Style="{StaticResource CmdButton}"
+                        Click="RemoveProject_Click" />
+            </StackPanel>
+        </Border>
 
-        <TextBox x:Name="LogBox" Margin="8" IsReadOnly="True"
-                 VerticalScrollBarVisibility="Auto" FontFamily="Consolas"
-                 TextWrapping="NoWrap" Background="#1e1e1e" Foreground="#d4d4d4"/>
+        <!-- ── COMMAND BUTTONS ──────────────────────── -->
+        <ScrollViewer DockPanel.Dock="Top"
+                      VerticalScrollBarVisibility="Auto"
+                      MaxHeight="260">
+            <WrapPanel Margin="4">
+
+                <GroupBox Header="Build">
+                    <WrapPanel>
+                        <Button Content="Clean"
+                                Style="{StaticResource CmdButton}"
+                                Click="Clean_Click" />
+                        <Button Content="Build Debug"
+                                Style="{StaticResource CmdButton}"
+                                Click="BuildDebug_Click" />
+                        <Button Content="Build Release"
+                                Style="{StaticResource CmdButton}"
+                                Click="BuildRelease_Click" />
+                        <Button Content="List Tasks"
+                                Style="{StaticResource CmdButton}"
+                                Click="ListTasks_Click" />
+                    </WrapPanel>
+                </GroupBox>
+
+                <GroupBox Header="Tests">
+                    <WrapPanel>
+                        <Button Content="Unit Tests"
+                                Style="{StaticResource CmdButton}"
+                                Click="UnitTests_Click" />
+                        <Button Content="Instrument Tests"
+                                Style="{StaticResource CmdButton}"
+                                Click="InstrumentTests_Click" />
+                    </WrapPanel>
+                </GroupBox>
+
+                <GroupBox Header="Environment">
+                    <WrapPanel>
+                        <Button Content="List Devices"
+                                Style="{StaticResource CmdButton}"
+                                Click="Devices_Click" />
+                        <Button Content="Start AVD"
+                                Style="{StaticResource CmdButton}"
+                                Click="StartAvd_Click" />
+                        <Button Content="Stop Daemons"
+                                Style="{StaticResource CmdButton}"
+                                Click="StopDaemons_Click" />
+                        <Button Content="Restart ADB"
+                                Style="{StaticResource CmdButton}"
+                                Click="RestartAdb_Click" />
+                    </WrapPanel>
+                </GroupBox>
+
+                <GroupBox Header="Cache Invalidation">
+                    <WrapPanel>
+                        <Button Content="Light Clean"
+                                Style="{StaticResource CmdButton}"
+                                Click="CacheLight_Click"
+                                ToolTip="Stop daemons + delete build dirs" />
+                        <Button Content="Medium Clean"
+                                Style="{StaticResource CmdButton}"
+                                Click="CacheMedium_Click"
+                                ToolTip="+ project .gradle, lock files, .idea caches" />
+                        <Button Content="Heavy Clean"
+                                Style="{StaticResource CmdButton}"
+                                Click="CacheHeavy_Click"
+                                ToolTip="+ global gradle caches (re-downloads deps!)" />
+                        <Button Content="Lock Files Only"
+                                Style="{StaticResource CmdButton}"
+                                Click="CleanLocks_Click" />
+                    </WrapPanel>
+                </GroupBox>
+
+                <GroupBox Header="Workflows">
+                    <WrapPanel>
+                        <Button Content="Full Test Run"
+                                Style="{StaticResource CmdButton}"
+                                Click="FullTestRun_Click"
+                                FontWeight="Bold"
+                                Background="#1e66f5"
+                                Foreground="White" />
+                        <Button Content="Cancel"
+                                Style="{StaticResource CmdButton}"
+                                Click="Cancel_Click"
+                                Background="#e64553"
+                                Foreground="White" />
+                        <Button Content="Clear Log"
+                                Style="{StaticResource CmdButton}"
+                                Click="ClearLog_Click" />
+                    </WrapPanel>
+                </GroupBox>
+
+            </WrapPanel>
+        </ScrollViewer>
+
+        <!-- ── LOG OUTPUT ───────────────────────────── -->
+        <Border Margin="8"
+                BorderBrush="#45475a"
+                BorderThickness="1"
+                CornerRadius="4">
+            <TextBox x:Name="LogBox"
+                     IsReadOnly="True"
+                     VerticalScrollBarVisibility="Auto"
+                     HorizontalScrollBarVisibility="Auto"
+                     FontFamily="Consolas"
+                     FontSize="12"
+                     TextWrapping="NoWrap"
+                     Background="#11111b"
+                     Foreground="#a6adc8"
+                     BorderThickness="0"
+                     Padding="8" />
+        </Border>
+
     </DockPanel>
 </Window>
