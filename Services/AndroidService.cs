@@ -7,6 +7,7 @@ public class AndroidService
     private readonly ProcessRunner _runner;
 
     public string ProjectPath { get; set; } = "";
+    public string SelectedVariant { get; set; } = "Debug";   // e.g. "Debug", "FreeDebug"
     public string SdkPath { get; }
     public string AdbPath { get; }
     public string EmulatorPath { get; }
@@ -21,24 +22,24 @@ public class AndroidService
 
     private string Gradlew => Path.Combine(ProjectPath, "gradlew.bat");
 
-    // ── Build ──────────────────────────────────────────
+    // ── Build (variant-aware) ──────────────────
     public Task<int> CleanBuild(CancellationToken ct) =>
         _runner.RunAsync(Gradlew, "clean", ProjectPath, ct);
 
-    public Task<int> BuildDebug(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, "assembleDebug", ProjectPath, ct);
+    public Task<int> AssembleVariant(CancellationToken ct) =>
+        _runner.RunAsync(Gradlew, $"assemble{SelectedVariant}", ProjectPath, ct);
 
-    public Task<int> BuildRelease(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, "assembleRelease", ProjectPath, ct);
+    public Task<int> AssembleAll(CancellationToken ct) =>
+        _runner.RunAsync(Gradlew, "assemble", ProjectPath, ct);
 
-    // ── Tests ──────────────────────────────────────────
+    // ── Tests (variant-aware) ──────────────────
     public Task<int> RunUnitTests(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, "testDebugUnitTest", ProjectPath, ct);
+        _runner.RunAsync(Gradlew, $"test{SelectedVariant}UnitTest", ProjectPath, ct);
 
     public Task<int> RunInstrumentTests(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew, "connectedDebugAndroidTest", ProjectPath, ct);
+        _runner.RunAsync(Gradlew, $"connected{SelectedVariant}AndroidTest", ProjectPath, ct);
 
-    // ── Daemons / ADB ──────────────────────────────────
+    // ── Daemons / ADB ──────────────────────────
     public Task<int> StopDaemons(CancellationToken ct) =>
         _runner.RunAsync(Gradlew, "--stop", ProjectPath, ct);
 
@@ -51,17 +52,14 @@ public class AndroidService
     public Task<int> StartAdbServer(CancellationToken ct) =>
         _runner.RunAsync(AdbPath, "start-server", ProjectPath, ct);
 
-    // ── Info ───────────────────────────────────────────
+    // ── Info ────────────────────────────────────
     public Task<int> ListTasks(CancellationToken ct) =>
         _runner.RunAsync(Gradlew, "tasks --all", ProjectPath, ct);
 
-    // ── SDK resolution ─────────────────────────────────
-    private static string ResolveSdkPath()
-    {
-        return Environment.GetEnvironmentVariable("ANDROID_HOME")
-            ?? Environment.GetEnvironmentVariable("ANDROID_SDK_ROOT")
-            ?? Path.Combine(
-                   Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                   "Android", "Sdk");
-    }
+    private static string ResolveSdkPath() =>
+        Environment.GetEnvironmentVariable("ANDROID_HOME")
+        ?? Environment.GetEnvironmentVariable("ANDROID_SDK_ROOT")
+        ?? Path.Combine(
+               Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+               "Android", "Sdk");
 }
