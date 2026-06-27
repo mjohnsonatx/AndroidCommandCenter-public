@@ -1,6 +1,7 @@
 ﻿using AndroidCommandCenter.Models;
 using AndroidCommandCenter.Services;
 using System.Collections.ObjectModel;
+using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
@@ -36,6 +37,7 @@ public partial class MainWindow : Window
 
     // ── Timers ───────────────────────────────────
     private readonly DispatcherTimer _deviceTimer;
+    private readonly DispatcherTimer _automationTimer;
 
     // ── State ────────────────────────────────────
     private CancellationTokenSource? _cts;
@@ -86,6 +88,10 @@ public partial class MainWindow : Window
         _deviceTimer.Tick += async (_, _) => await RefreshDeviceList();
         _deviceTimer.Start();
 
+        _automationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+        _automationTimer.Tick += async (_, _) => await CheckScheduledAutomation();
+        _automationTimer.Start();
+
         Log("Android Command Center ready.");
         Log($"SDK: {_android.SdkPath}");
 
@@ -96,6 +102,7 @@ public partial class MainWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         _deviceTimer.Stop();
+        _automationTimer.Stop();
         _dashboard.Dispose();
         base.OnClosed(e);
     }
@@ -123,6 +130,65 @@ public partial class MainWindow : Window
         MemBar.Value = s.MemoryPercent;
         MemLabel.Text = $"{s.MemoryUsedMb:N0}/{s.MemoryTotalMb:N0} MB";
         DaemonLabel.Text = s.JavaProcessCount.ToString();
+    }
+
+    private async Task CheckScheduledAutomation()
+    {
+        if (_isRunning || !_settings.Automation.RecurringRunsEnabled) return;
+
+        string? dueKey = GetDueScheduledRunKey(_settings.Automation, DateTime.Now);
+        if (dueKey == null) return;
+
+        _settings.Automation.LastScheduledRunKey = dueKey;
+        _settings.Save();
+
+        Log($"\nScheduled automated deployment triggered: {dueKey}");
+        await RunAutomatedDeployment(triggeredBySchedule: true);
+    }
+
+    private static string? GetDueScheduledRunKey(AutomationConfig automation, DateTime now)
+    {
+        if (!TryParseRecurringTimes(automation.RecurringRunTimes, out var runTimes))
+            return null;
+
+        foreach (var time in runTimes)
+        {
+            var scheduledAt = now.Date.Add(time);
+            var age = now - scheduledAt;
+            if (age >= TimeSpan.Zero && age < TimeSpan.FromMinutes(5))
+            {
+                string key = $"{scheduledAt:yyyy-MM-dd}|{time:hh\\:mm}";
+                return automation.LastScheduledRunKey == key ? null : key;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryParseRecurringTimes(string value, out List<TimeSpan> runTimes)
+    {
+        runTimes = [];
+        var seen = new HashSet<TimeSpan>();
+
+        foreach (string raw in value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TimeSpan.TryParseExact(
+                    raw,
+                    [@"h\:mm", @"hh\:mm"],
+                    CultureInfo.InvariantCulture,
+                    out var time) ||
+                time < TimeSpan.Zero ||
+                time >= TimeSpan.FromDays(1))
+            {
+                return false;
+            }
+
+            if (seen.Add(time))
+                runTimes.Add(time);
+        }
+
+        runTimes.Sort();
+        return runTimes.Count > 0;
     }
 
     // ═══════════════════════════════════════════════
@@ -615,13 +681,13 @@ public partial class MainWindow : Window
         Log("Automation config saved.");
 
         if (dlg.RunNow)
-            await RunAutomatedDeployment();
+            await RunAutomatedDeployment(triggeredBySchedule: false);
     }
 
     private async void RunAutomatedDeployment_Click(object s, RoutedEventArgs e) =>
-        await RunAutomatedDeployment();
+        await RunAutomatedDeployment(triggeredBySchedule: false);
 
-    private async Task RunAutomatedDeployment()
+    private async Task RunAutomatedDeployment(bool triggeredBySchedule)
     {
         if (!RequireProject() || !RequireIdle()) return;
 
@@ -650,7 +716,7 @@ public partial class MainWindow : Window
             },
             "Automated Pipeline");
 
-        await SendAutomationNotification(automation, result);
+        await SendAutomationNotification(automation, result, showLocalCompletion: !triggeredBySchedule);
     }
 
     private async void FullPipeline_Click(object s, RoutedEventArgs e)
@@ -695,10 +761,20 @@ public partial class MainWindow : Window
         return true;
     }
 
-    private async Task SendAutomationNotification(AutomationConfig automation, PipelineRunResult result)
+    private async Task SendAutomationNotification(
+        AutomationConfig automation,
+        PipelineRunResult result,
+        bool showLocalCompletion)
     {
         if (!automation.Email.SendEmail)
         {
+            if (!showLocalCompletion)
+            {
+                Log($"Automated deployment finished: {result.Status}");
+                Log($"Pipeline log: {result.LogPath}");
+                return;
+            }
+
             MessageBox.Show(
                 $"Automated deployment finished: {result.Status}\n\nLog:\n{result.LogPath}",
                 "Automated Deployment",
@@ -753,6 +829,9 @@ public partial class MainWindow : Window
     {
         RemoteName = source.RemoteName,
         SourceBranch = source.SourceBranch,
+        RecurringRunsEnabled = source.RecurringRunsEnabled,
+        RecurringRunTimes = source.RecurringRunTimes,
+        LastScheduledRunKey = source.LastScheduledRunKey,
         FailureAction = source.FailureAction,
         Email = new EmailNotificationConfig
         {

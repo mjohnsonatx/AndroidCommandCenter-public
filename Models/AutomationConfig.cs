@@ -9,6 +9,9 @@ public class AutomationConfig
 {
     public string RemoteName { get; set; } = "origin";
     public string SourceBranch { get; set; } = "master";
+    public bool RecurringRunsEnabled { get; set; }
+    public string RecurringRunTimes { get; set; } = "02:00";
+    public string LastScheduledRunKey { get; set; } = "";
     public TestFailureAction FailureAction { get; set; } = TestFailureAction.AutomaticBounceBack;
     public EmailNotificationConfig Email { get; set; } = new();
 

@@ -17,14 +17,6 @@
 
     <DockPanel>
 
-        <Menu DockPanel.Dock="Top" Background="#181825" Foreground="#cdd6f4">
-            <MenuItem Header="_Automation" Background="#181825" Foreground="#cdd6f4">
-                <MenuItem Header="Configure Automated Deployment..." Click="AutomationConfig_Click" />
-                <Separator />
-                <MenuItem Header="Run Automated Deployment" Click="RunAutomatedDeployment_Click" />
-            </MenuItem>
-        </Menu>
-
         <!-- ═══ SELECTORS ═════════════════════════ -->
         <Border DockPanel.Dock="Top" Background="#181825" Padding="10,8">
             <Grid>
@@ -227,6 +219,24 @@
                                 Click="FullPipeline_Click"
                                 FontWeight="Bold" Background="#40a02b" Foreground="White"
                                 ToolTip="Tests → Build Signed → Deploy" />
+                    </WrapPanel>
+                </GroupBox>
+                <GroupBox Header="Automation">
+                    <WrapPanel>
+                        <Button Content="Configure Schedule"
+                                Style="{StaticResource CmdButton}"
+                                Click="AutomationConfig_Click"
+                                Background="#f9e2af"
+                                Foreground="#11111b"
+                                FontWeight="Bold"
+                                ToolTip="Set recurring deployment times, source branch, failure policy, and email report settings" />
+                        <Button Content="Run Auto Now"
+                                Style="{StaticResource CmdButton}"
+                                Click="RunAutomatedDeployment_Click"
+                                Background="#fab387"
+                                Foreground="#11111b"
+                                FontWeight="Bold"
+                                ToolTip="Pull current master head, run tests, build signed APK, deploy to Firebase, and send the log report" />
                     </WrapPanel>
                 </GroupBox>
             </WrapPanel>

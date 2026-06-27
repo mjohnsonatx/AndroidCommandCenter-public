@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using AndroidCommandCenter.Models;
+using System.Globalization;
 
 namespace AndroidCommandCenter;
 
@@ -17,6 +18,8 @@ public partial class AutomationWindow : Window
 
         RemoteBox.Text = cfg.RemoteName;
         BranchBox.Text = cfg.SourceBranch;
+        RecurringCheck.IsChecked = cfg.RecurringRunsEnabled;
+        RunTimesBox.Text = cfg.RecurringRunTimes;
         FailureCombo.SelectedIndex = (int)cfg.FailureAction;
 
         EmailCheck.IsChecked = cfg.Email.SendEmail;
@@ -28,11 +31,18 @@ public partial class AutomationWindow : Window
         UserBox.Text = cfg.Email.UserName;
         PasswordBox.Password = cfg.Email.Password;
 
+        UpdateScheduleVisibility();
         UpdateEmailVisibility();
         Validate();
     }
 
     private void Field_Changed(object s, TextChangedEventArgs e) => Validate();
+
+    private void RecurringCheck_Changed(object s, RoutedEventArgs e)
+    {
+        UpdateScheduleVisibility();
+        Validate();
+    }
 
     private void EmailCheck_Changed(object s, RoutedEventArgs e)
     {
@@ -40,12 +50,17 @@ public partial class AutomationWindow : Window
         Validate();
     }
 
+    private void UpdateScheduleVisibility() =>
+        SchedulePanel.Visibility = RecurringCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
     private void UpdateEmailVisibility() =>
         EmailPanel.Visibility = EmailCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
 
     private void Validate()
     {
         bool git = IsSimpleGitName(RemoteBox.Text) && IsSimpleGitName(BranchBox.Text);
+        bool scheduleEnabled = RecurringCheck.IsChecked == true;
+        bool schedule = !scheduleEnabled || TryParseRunTimes(RunTimesBox.Text, out _);
         bool emailEnabled = EmailCheck.IsChecked == true;
         bool email = !emailEnabled ||
                      (!string.IsNullOrWhiteSpace(ToBox.Text) &&
@@ -54,16 +69,28 @@ public partial class AutomationWindow : Window
                       int.TryParse(SmtpPortBox.Text, out int port) &&
                       port > 0);
 
-        SaveBtn.IsEnabled = git && email;
-        SaveRunBtn.IsEnabled = git && email;
+        SaveBtn.IsEnabled = git && schedule && email;
+        SaveRunBtn.IsEnabled = git && schedule && email;
     }
 
     private bool SaveConfig()
     {
-        if (!int.TryParse(SmtpPortBox.Text, out int port)) return false;
+        if (!TryParseRunTimes(RunTimesBox.Text, out var runTimes) && RecurringCheck.IsChecked == true)
+            return false;
+
+        int port = 587;
+        if (!string.IsNullOrWhiteSpace(SmtpPortBox.Text) &&
+            !int.TryParse(SmtpPortBox.Text, out port))
+        {
+            return false;
+        }
 
         _cfg.RemoteName = RemoteBox.Text.Trim();
         _cfg.SourceBranch = BranchBox.Text.Trim();
+        _cfg.RecurringRunsEnabled = RecurringCheck.IsChecked == true;
+        _cfg.RecurringRunTimes = runTimes.Count > 0
+            ? string.Join(", ", runTimes.Select(t => t.ToString(@"hh\:mm", CultureInfo.InvariantCulture)))
+            : RunTimesBox.Text.Trim();
         _cfg.FailureAction = (TestFailureAction)Math.Max(0, FailureCombo.SelectedIndex);
 
         _cfg.Email.SendEmail = EmailCheck.IsChecked == true;
@@ -105,5 +132,31 @@ public partial class AutomationWindow : Window
                !value.Any(char.IsWhiteSpace) &&
                !value.Contains('"') &&
                !value.Contains('\'');
+    }
+
+    private static bool TryParseRunTimes(string value, out List<TimeSpan> times)
+    {
+        times = [];
+        var seen = new HashSet<TimeSpan>();
+
+        foreach (string raw in value.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            if (!TimeSpan.TryParseExact(
+                    raw,
+                    [@"h\:mm", @"hh\:mm"],
+                    CultureInfo.InvariantCulture,
+                    out var time) ||
+                time < TimeSpan.Zero ||
+                time >= TimeSpan.FromDays(1))
+            {
+                return false;
+            }
+
+            if (seen.Add(time))
+                times.Add(time);
+        }
+
+        times.Sort();
+        return times.Count > 0;
     }
 }
