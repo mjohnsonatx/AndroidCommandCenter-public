@@ -24,10 +24,14 @@ public class AndroidService
 
     private string Gradlew => Path.Combine(ProjectPath, "gradlew.bat");
 
-    // ── Signed release build ───────────────────
-    public Task<int> BuildSignedRelease(CiCdConfig config, CancellationToken ct)
+    
+    // ── Signed APK build (one or more variants) ─
+    public Task<int> BuildSignedApk(CiCdConfig config, IEnumerable<string> variants, CancellationToken ct)
     {
-        string args = "assembleRelease";
+        string tasks = string.Join(" ", variants.Select(v => $"assemble{v}"));
+        if (string.IsNullOrWhiteSpace(tasks)) tasks = "assembleRelease";
+
+        string args = tasks;
         if (config.IsSigningConfigured)
         {
             args += $" -Pandroid.injected.signing.store.file=\"{config.KeystorePath}\"" +

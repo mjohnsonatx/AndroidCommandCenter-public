@@ -197,29 +197,30 @@
                         <Button Content="Clear Log" Style="{StaticResource CmdButton}" Click="ClearLog_Click" />
                     </WrapPanel>
                 </GroupBox>
-
                 <GroupBox Header="CI/CD Pipeline">
                     <WrapPanel>
-                        <Button Content="Settings"
+                        <Button x:Name="FirebaseConfigButton"
+                                Content="Firebase Config"
                                 Style="{StaticResource CmdButton}"
-                                Click="CiCdSettings_Click"
-                                ToolTip="Configure signing + Firebase" />
-                        <Button Content="Build Signed APK"
+                                Click="FirebaseConfig_Click"
+                                ToolTip="App ID + service account JSON" />
+                        <Button x:Name="BuildSignedButton"
+                                Content="Build Signed APK"
                                 Style="{StaticResource CmdButton}"
                                 Click="BuildSigned_Click" />
-                        <Button Content="Deploy to Firebase"
+                        <Button x:Name="DeployFirebaseButton"
+                                Content="Deploy to Firebase"
                                 Style="{StaticResource CmdButton}"
-                                Click="DeployFirebase_Click" />
-                        <Button Content="Full Pipeline"
+                                Click="DeployFirebase_Click"
+                                ToolTipService.ShowOnDisabled="True" />
+                        <Button x:Name="FullPipelineButton"
+                                Content="Full Pipeline"
                                 Style="{StaticResource CmdButton}"
                                 Click="FullPipeline_Click"
-                                FontWeight="Bold"
-                                Background="#40a02b"
-                                Foreground="White"
-                                ToolTip="Clean → Test → Build Signed → Deploy" />
+                                FontWeight="Bold" Background="#40a02b" Foreground="White"
+                                ToolTip="Tests → Build Signed → Deploy" />
                     </WrapPanel>
                 </GroupBox>
-
             </WrapPanel>
         </ScrollViewer>
 
