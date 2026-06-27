@@ -1,7 +1,7 @@
 ﻿using System.Collections.ObjectModel;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Input;
 using System.Windows.Media;
 using AndroidCommandCenter.Models;
 using AndroidCommandCenter.Services;
@@ -18,24 +18,21 @@ public partial class MainWindow : Window
     private readonly WorkflowEngine _workflow = new();
     private readonly FlavorDetector _flavors = new();
     private readonly DashboardService _dashboard = new();
+    private readonly TestReportService _testReports = new();
     private readonly AppSettings _settings;
 
     // ── UI collections ───────────────────────────
     private readonly ObservableCollection<string> _projects = new();
     private readonly ObservableCollection<string> _variants = new();
+    private readonly ObservableCollection<string> _avds = new();
 
     // ── State ────────────────────────────────────
     private CancellationTokenSource? _cts;
     private bool _isRunning;
 
-    // ── Pre-built brushes for status label ───────
-    private static readonly SolidColorBrush IdleBrush =
-        new(Color.FromRgb(0xa6, 0xe3, 0xa1));          // green
-    private static readonly SolidColorBrush BusyBrush =
-        new(Color.FromRgb(0xf9, 0xe2, 0xaf));          // yellow
+    private static readonly SolidColorBrush IdleBrush = new(Color.FromRgb(0xa6, 0xe3, 0xa1));
+    private static readonly SolidColorBrush BusyBrush = new(Color.FromRgb(0xf9, 0xe2, 0xaf));
 
-    // ═══════════════════════════════════════════════
-    //  CONSTRUCTOR
     // ═══════════════════════════════════════════════
     public MainWindow()
     {
@@ -45,21 +42,20 @@ public partial class MainWindow : Window
         _avd = new AvdManager(_runner, _android.AdbPath, _android.EmulatorPath);
         _cache = new CacheManager(_runner, _android);
 
-        // Pipe every log source into the UI
         _runner.OutputReceived += line => Dispatcher.Invoke(() => Log(line));
         _avd.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _cache.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _workflow.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _flavors.LogMessage += line => Dispatcher.Invoke(() => Log(line));
+        _testReports.LogMessage += line => Dispatcher.Invoke(() => Log(line));
 
-        // Dashboard
         _dashboard.StatsUpdated += s => Dispatcher.Invoke(() => UpdateDashboard(s));
         _dashboard.Start();
 
-        // Load settings & populate dropdowns
         _settings = AppSettings.Load();
         ProjectCombo.ItemsSource = _projects;
         VariantCombo.ItemsSource = _variants;
+        AvdCombo.ItemsSource = _avds;
 
         foreach (var p in _settings.ProjectPaths) _projects.Add(p);
         if (_settings.LastSelectedProject != null)
@@ -67,6 +63,8 @@ public partial class MainWindow : Window
 
         Log("Android Command Center ready.");
         Log($"SDK: {_android.SdkPath}");
+
+        _ = LoadAvds();   // fire-and-forget
     }
 
     protected override void OnClosed(EventArgs e)
@@ -76,7 +74,7 @@ public partial class MainWindow : Window
     }
 
     // ═══════════════════════════════════════════════
-    //  LOGGING & DASHBOARD
+    //  LOGGING + DASHBOARD
     // ═══════════════════════════════════════════════
     private void Log(string msg)
     {
@@ -135,22 +133,19 @@ public partial class MainWindow : Window
         _settings.LastSelectedProject = sel;
         _settings.Save();
         Log($"\nActive project: {sel}");
-
         LoadVariants(sel);
     }
 
     // ═══════════════════════════════════════════════
-    //  VARIANT MANAGEMENT
+    //  VARIANTS
     // ═══════════════════════════════════════════════
     private void LoadVariants(string project)
     {
         _variants.Clear();
-        foreach (var v in _settings.GetVariants(project))
-            _variants.Add(v);
+        foreach (var v in _settings.GetVariants(project)) _variants.Add(v);
 
         string prev = _settings.GetSelectedVariant(project);
-        VariantCombo.SelectedItem =
-            _variants.Contains(prev) ? prev : _variants.FirstOrDefault();
+        VariantCombo.SelectedItem = _variants.Contains(prev) ? prev : _variants.FirstOrDefault();
     }
 
     private void VariantCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -178,32 +173,54 @@ public partial class MainWindow : Window
         Log("=== Detection complete ===");
     }
 
-    private void AddVariant_Click(object sender, RoutedEventArgs e) => AddCustomVariant();
-
-    private void CustomVariantBox_KeyDown(object sender, KeyEventArgs e)
+    // ═══════════════════════════════════════════════
+    //  AVDs
+    // ═══════════════════════════════════════════════
+    private async Task LoadAvds()
     {
-        if (e.Key == Key.Enter) AddCustomVariant();
-    }
-
-    private void AddCustomVariant()
-    {
-        string raw = CustomVariantBox.Text.Trim();
-        if (string.IsNullOrEmpty(raw)) return;
-
-        string variant = char.ToUpper(raw[0]) + raw[1..];
-        if (!_variants.Contains(variant))
+        try
         {
-            _variants.Add(variant);
-            if (!string.IsNullOrEmpty(_android.ProjectPath))
-                _settings.SetVariants(_android.ProjectPath, [.. _variants]);
+            var avds = await _avd.GetAvailableAvds(CancellationToken.None);
+            Dispatcher.Invoke(() =>
+            {
+                _avds.Clear();
+                foreach (var a in avds) _avds.Add(a);
+
+                AvdCombo.SelectedItem =
+                    (_settings.PreferredAvd != null && _avds.Contains(_settings.PreferredAvd))
+                        ? _settings.PreferredAvd
+                        : _avds.FirstOrDefault();
+
+                if (_avds.Count == 0)
+                    Log("[!] No AVDs found. Create one in Android Studio > Device Manager.");
+            });
         }
-        VariantCombo.SelectedItem = variant;
-        CustomVariantBox.Clear();
-        Log($"Added variant: {variant}");
+        catch (Exception ex)
+        {
+            Dispatcher.Invoke(() => Log($"[WARN] Could not load AVDs: {ex.Message}"));
+        }
     }
+
+    private void AvdCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (AvdCombo.SelectedItem is string sel)
+        {
+            _settings.PreferredAvd = sel;
+            _settings.Save();
+        }
+    }
+
+    private async void RefreshAvds_Click(object sender, RoutedEventArgs e)
+    {
+        Log("Refreshing AVD list...");
+        await LoadAvds();
+    }
+
+    private void OpenReports_Click(object sender, RoutedEventArgs e) =>
+        System.Diagnostics.Process.Start("explorer.exe", TestReportService.ReportsDirectory);
 
     // ═══════════════════════════════════════════════
-    //  COMMAND RUNNER (shared plumbing)
+    //  COMMAND RUNNER
     // ═══════════════════════════════════════════════
     private bool RequireProject()
     {
@@ -241,36 +258,95 @@ public partial class MainWindow : Window
     // ═══════════════════════════════════════════════
     //  BUILD
     // ═══════════════════════════════════════════════
-    private async void Clean_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.CleanBuild, "Clean");
-
-    private async void Build_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.AssembleVariant, $"Build {_android.SelectedVariant}");
-
-    private async void BuildAll_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.AssembleAll, "Build All");
-
-    private async void ListTasks_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.ListTasks, "List Tasks");
+    private async void Clean_Click(object s, RoutedEventArgs e) => await RunOp(_android.CleanBuild, "Clean");
+    private async void Build_Click(object s, RoutedEventArgs e) => await RunOp(_android.AssembleVariant, $"Build {_android.SelectedVariant}");
+    private async void BuildAll_Click(object s, RoutedEventArgs e) => await RunOp(_android.AssembleAll, "Build All");
+    private async void ListTasks_Click(object s, RoutedEventArgs e) => await RunOp(_android.ListTasks, "List Tasks");
 
     // ═══════════════════════════════════════════════
-    //  TESTS
+    //  TESTS (with report generation)
     // ═══════════════════════════════════════════════
     private async void UnitTests_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.RunUnitTests, "Unit Tests");
+        await RunTestsWithReport(_android.RunUnitTests, "UnitTests", ensureEmulator: false);
 
     private async void InstrumentTests_Click(object s, RoutedEventArgs e) =>
-        await RunOp(_android.RunInstrumentTests, "Instrument Tests");
+        await RunTestsWithReport(_android.RunInstrumentTests, "InstrumentTests", ensureEmulator: true);
+
+    private async Task RunTestsWithReport(
+        Func<CancellationToken, Task<int>> testOp, string testType, bool ensureEmulator)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        _isRunning = true;
+        _cts = new CancellationTokenSource();
+        SetStatus(testType);
+
+        // Capture console output for the saved report (second handler; UI still logs too)
+        var buffer = new StringBuilder();
+        void capture(string line) => buffer.AppendLine(line);
+        _runner.OutputReceived += capture;
+
+        try
+        {
+            if (ensureEmulator)
+            {
+                Log("Ensuring emulator is running...");
+                if (!await _avd.EnsureEmulatorRunning(_settings.PreferredAvd, _cts.Token))
+                {
+                    Log("[ERROR] No emulator available. Aborting.");
+                    return;
+                }
+            }
+
+            Log($"\n===== {testType} ({_android.SelectedVariant}) =====");
+            int code = await testOp(_cts.Token);
+            Log($"===== {testType} exit {code} =====");
+
+            var report = _testReports.ParseResults(_android.ProjectPath, testType);
+            ShowSummary(report);
+
+            string path = _testReports.SaveReport(
+                report, _android.ProjectPath, _android.SelectedVariant, buffer.ToString());
+            Log($"Report saved: {path}");
+        }
+        catch (OperationCanceledException) { Log($"===== {testType} cancelled ====="); }
+        catch (Exception ex) { Log($"[ERROR] {ex.Message}"); }
+        finally
+        {
+            _runner.OutputReceived -= capture;
+            _isRunning = false;
+            SetStatus("Idle");
+        }
+    }
+
+    private void ShowSummary(TestReport report)
+    {
+        Log("");
+        Log("---------- TEST SUMMARY ----------");
+        Log($"  Total:   {report.Total}");
+        Log($"  Passed:  {report.Passed}");
+        Log($"  Failed:  {report.Failed}");
+        Log($"  Skipped: {report.Skipped}");
+        Log($"  Time:    {report.TotalTimeSeconds:F2}s");
+
+        if (report.Failures.Count > 0)
+        {
+            Log("");
+            Log("  FAILURES:");
+            foreach (var f in report.Failures)
+            {
+                Log($"   [X] {f.ClassName}.{f.Name}");
+                if (f.FailureMessage != null) Log($"       {f.FailureMessage}");
+            }
+        }
+        Log("----------------------------------");
+    }
 
     // ═══════════════════════════════════════════════
     //  ENVIRONMENT
     // ═══════════════════════════════════════════════
     private async void Devices_Click(object s, RoutedEventArgs e) =>
-        await RunOp(async ct =>
-        {
-            var (code, _) = await _android.ListDevices(ct);
-            return code;
-        }, "List Devices");
+        await RunOp(async ct => { var (code, _) = await _android.ListDevices(ct); return code; }, "List Devices");
 
     private async void StartAvd_Click(object s, RoutedEventArgs e)
     {
@@ -296,20 +372,14 @@ public partial class MainWindow : Window
     // ═══════════════════════════════════════════════
     //  CACHE
     // ═══════════════════════════════════════════════
-    private async void CacheLight_Click(object s, RoutedEventArgs e) =>
-        await RunCacheClean(CacheCleanLevel.Light);
-
-    private async void CacheMedium_Click(object s, RoutedEventArgs e) =>
-        await RunCacheClean(CacheCleanLevel.Medium);
+    private async void CacheLight_Click(object s, RoutedEventArgs e) => await RunCacheClean(CacheCleanLevel.Light);
+    private async void CacheMedium_Click(object s, RoutedEventArgs e) => await RunCacheClean(CacheCleanLevel.Medium);
 
     private async void CacheHeavy_Click(object s, RoutedEventArgs e)
     {
         if (MessageBox.Show(
-                "This deletes your global Gradle cache.\n" +
-                "All dependencies re-download.\n\nContinue?",
-                "Heavy Clean",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Warning) == MessageBoxResult.Yes)
+                "This deletes your global Gradle cache.\nAll dependencies re-download.\n\nContinue?",
+                "Heavy Clean", MessageBoxButton.YesNo, MessageBoxImage.Warning) == MessageBoxResult.Yes)
             await RunCacheClean(CacheCleanLevel.Heavy);
     }
 
@@ -325,8 +395,7 @@ public partial class MainWindow : Window
     private async Task RunCacheClean(CacheCleanLevel level)
     {
         if (!RequireProject() || !RequireIdle()) return;
-        _isRunning = true;
-        _cts = new CancellationTokenSource();
+        _isRunning = true; _cts = new CancellationTokenSource();
         SetStatus($"Cache ({level})");
         Log($"\n===== Cache Clean ({level}) =====");
         try { await _cache.CleanCaches(level, _cts.Token); }
@@ -336,45 +405,36 @@ public partial class MainWindow : Window
     }
 
     // ═══════════════════════════════════════════════
-    //  FULL TEST RUN WORKFLOW
+    //  FULL TEST RUN
     // ═══════════════════════════════════════════════
     private async void FullTestRun_Click(object s, RoutedEventArgs e)
     {
         if (!RequireProject() || !RequireIdle()) return;
-        _isRunning = true;
-        _cts = new CancellationTokenSource();
+        _isRunning = true; _cts = new CancellationTokenSource();
         SetStatus("Full Test Run");
 
         string v = _android.SelectedVariant;
         var steps = new List<WorkflowStep>
         {
-            new() { Name = "Stop Daemons",
-                    Action = _android.StopDaemons,
-                    StopOnFailure = false },
-            new() { Name = "Clean",
-                    Action = _android.CleanBuild },
-            new() { Name = "Invalidate Caches",
-                    Action = async ct =>
-                    {
-                        await _cache.CleanCaches(CacheCleanLevel.Medium, ct);
-                        return 0;
-                    }},
-            new() { Name = $"Unit Tests ({v})",
-                    Action = _android.RunUnitTests,
-                    MaxRetries = 2 },
-            new() { Name = "Ensure Emulator",
-                    Action = async ct =>
-                        (await _avd.EnsureEmulatorRunning(
-                            _settings.PreferredAvd, ct)) ? 0 : 1 },
-            new() { Name = $"Instrumented Tests ({v})",
-                    Action = _android.RunInstrumentTests,
-                    MaxRetries = 2 }
+            new() { Name = "Stop Daemons",      Action = _android.StopDaemons, StopOnFailure = false },
+            new() { Name = "Clean",             Action = _android.CleanBuild },
+            new() { Name = "Invalidate Caches", Action = async ct => { await _cache.CleanCaches(CacheCleanLevel.Medium, ct); return 0; } },
+            new() { Name = $"Unit Tests ({v})", Action = _android.RunUnitTests, MaxRetries = 2 },
+            new() { Name = "Ensure Emulator",   Action = async ct => (await _avd.EnsureEmulatorRunning(_settings.PreferredAvd, ct)) ? 0 : 1 },
+            new() { Name = $"Instrumented Tests ({v})", Action = _android.RunInstrumentTests, MaxRetries = 2 }
         };
 
         try
         {
             bool ok = await _workflow.ExecuteAsync("Full Test Run", steps, _cts.Token);
-            Log(ok ? "\nAll tests passed!" : "\nSome steps failed.");
+
+            // Generate reports for both test types after the run
+            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
+            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+            if (unit.Total > 0) { ShowSummary(unit); _testReports.SaveReport(unit, _android.ProjectPath, v, "(full test run)"); }
+            if (inst.Total > 0) { ShowSummary(inst); _testReports.SaveReport(inst, _android.ProjectPath, v, "(full test run)"); }
+
+            Log(ok ? "\nAll steps passed!" : "\nSome steps failed.");
         }
         catch (OperationCanceledException) { Log("\nWorkflow cancelled."); }
         catch (Exception ex) { Log($"\n[ERROR] {ex.Message}"); }
