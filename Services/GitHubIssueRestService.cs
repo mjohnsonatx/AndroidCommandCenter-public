@@ -18,14 +18,65 @@ public class GitHubIssueRestService
 
     private void Auth(string token)
     {
-        _http.DefaultRequestHeaders.UserAgent.TryParseAdd("AndroidCommandCenter");
-        _http.DefaultRequestHeaders.Accept.Clear();
+        _http.DefaultRequestHeaders.Clear();
+        _http.DefaultRequestHeaders.Add("User-Agent", "AndroidCommandCenter");
         _http.DefaultRequestHeaders.Accept.Add(
             new MediaTypeWithQualityHeaderValue("application/vnd.github+json"));
-        _http.DefaultRequestHeaders.Authorization =
-            string.IsNullOrWhiteSpace(token) ? null
-            : new AuthenticationHeaderValue("Bearer", token);
+        _http.DefaultRequestHeaders.Add("X-GitHub-Api-Version", "2022-11-28");
+        if (!string.IsNullOrWhiteSpace(token))
+            _http.DefaultRequestHeaders.Authorization =
+                new AuthenticationHeaderValue("Bearer", token);
     }
+
+    // ── LIST REPOS FOR AUTHENTICATED USER OR ORG ──────────────
+
+    /// <summary>
+    /// Lists repos the token has access to. For a personal token this returns
+    /// the user's repos; for an org owner it returns org repos too.
+    /// Returns repo full names like "owner/repo-name".
+    /// </summary>
+    public async Task<List<GitHubRepoDto>> GetReposAsync(
+        string token, string? owner = null, CancellationToken ct = default)
+    {
+        Auth(token);
+        var all = new List<GitHubRepoDto>();
+
+        for (int page = 1; page <= 20; page++)
+        {
+            ct.ThrowIfCancellationRequested();
+
+            // If owner specified, use /users/{owner}/repos
+            // Otherwise use /user/repos for the authenticated user
+            string url = string.IsNullOrWhiteSpace(owner)
+                ? $"https://api.github.com/user/repos?per_page=100&page={page}&sort=updated&direction=desc"
+                : $"https://api.github.com/users/{Uri.EscapeDataString(owner)}/repos?per_page=100&page={page}&sort=updated&direction=desc";
+
+            LogMessage?.Invoke($"[repos] fetching page {page}…");
+            var resp = await _http.GetAsync(url, ct);
+
+            if (!resp.IsSuccessStatusCode)
+            {
+                // If /users/ 404s, try /orgs/
+                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound
+                    && !string.IsNullOrWhiteSpace(owner))
+                {
+                    url = $"https://api.github.com/orgs/{Uri.EscapeDataString(owner)}/repos?per_page=100&page={page}&sort=updated&direction=desc";
+                    resp = await _http.GetAsync(url, ct);
+                }
+                resp.EnsureSuccessStatusCode();
+            }
+
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            var batch = JsonSerializer.Deserialize<List<GitHubRepoDto>>(json, JsonOpts) ?? [];
+            all.AddRange(batch);
+            if (batch.Count < 100) break;
+        }
+
+        LogMessage?.Invoke($"[repos] loaded {all.Count} repositories");
+        return all;
+    }
+
+    // ── LIST ISSUES WITH PROPER PAGINATION ────────────────────
 
     public async Task<List<GitHubIssueModel>> GetIssuesAsync(
         string owner, string repo, string token,
@@ -33,35 +84,57 @@ public class GitHubIssueRestService
     {
         Auth(token);
         var all = new List<GitHubIssueModel>();
-        for (int page = 1; page <= 10; page++)
+
+        for (int page = 1; page <= 30; page++)   // up to 3000 issues
         {
             ct.ThrowIfCancellationRequested();
             var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}" +
                       $"/{Uri.EscapeDataString(repo)}/issues" +
                       $"?state={state}&per_page=100&page={page}&sort=updated&direction=desc";
+
             LogMessage?.Invoke($"[issues] fetching page {page}…");
             var resp = await _http.GetAsync(url, ct);
             resp.EnsureSuccessStatusCode();
+
             var json = await resp.Content.ReadAsStringAsync(ct);
             var batch = JsonSerializer.Deserialize<List<GitHubIssueModel>>(json, JsonOpts) ?? [];
+
+            // GitHub includes PRs in the issues endpoint — filter them out
             all.AddRange(batch.Where(i => !i.IsPullRequest));
+
             if (batch.Count < 100) break;
         }
+
         LogMessage?.Invoke($"[issues] {all.Count} issues loaded from {owner}/{repo}");
         return all;
     }
+
+    // ── COMMENTS ──────────────────────────────────────────────
 
     public async Task<List<GitHubCommentDto>> GetCommentsAsync(
         string owner, string repo, string token,
         int issueNumber, CancellationToken ct = default)
     {
         Auth(token);
-        var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}" +
-                  $"/{Uri.EscapeDataString(repo)}/issues/{issueNumber}/comments?per_page=100";
-        var resp = await _http.GetAsync(url, ct);
-        resp.EnsureSuccessStatusCode();
-        var json = await resp.Content.ReadAsStringAsync(ct);
-        return JsonSerializer.Deserialize<List<GitHubCommentDto>>(json, JsonOpts) ?? [];
+        var all = new List<GitHubCommentDto>();
+
+        for (int page = 1; page <= 10; page++)
+        {
+            ct.ThrowIfCancellationRequested();
+            var url = $"https://api.github.com/repos/{Uri.EscapeDataString(owner)}" +
+                      $"/{Uri.EscapeDataString(repo)}/issues/{issueNumber}/comments" +
+                      $"?per_page=100&page={page}";
+
+            var resp = await _http.GetAsync(url, ct);
+            resp.EnsureSuccessStatusCode();
+
+            var json = await resp.Content.ReadAsStringAsync(ct);
+            var batch = JsonSerializer.Deserialize<List<GitHubCommentDto>>(json, JsonOpts) ?? [];
+            all.AddRange(batch);
+            if (batch.Count < 100) break;
+        }
+
+        return all;
     }
 
     public async Task<bool> AddCommentAsync(

@@ -288,6 +288,15 @@
     </Style>
 
     <!-- ═══ DATA GRID ═════════════════════════════════════ -->
+    <!-- ═══ CONTEXT BANNER ════════════════════════════════ -->
+    <Style TargetType="Border" x:Key="ContextBanner">
+        <Setter Property="Background"      Value="#11111b"/>
+        <Setter Property="BorderBrush"     Value="#313244"/>
+        <Setter Property="BorderThickness" Value="0,0,0,1"/>
+        <Setter Property="Padding"         Value="12,8"/>
+    </Style>
+
+    <!-- Fix DataGrid to fill space and enable virtualisation -->
     <Style TargetType="DataGrid" x:Key="DarkDataGrid">
         <Setter Property="Background"               Value="#11111b"/>
         <Setter Property="Foreground"                Value="#cdd6f4"/>
@@ -303,36 +312,29 @@
         <Setter Property="AutoGenerateColumns"       Value="False"/>
         <Setter Property="CanUserAddRows"            Value="False"/>
         <Setter Property="CanUserResizeRows"         Value="False"/>
+        <Setter Property="VerticalScrollBarVisibility"   Value="Auto"/>
+        <Setter Property="EnableRowVirtualization"       Value="True"/>
+        <Setter Property="EnableColumnVirtualization"    Value="True"/>
+        <Setter Property="VirtualizingPanel.IsVirtualizing"          Value="True"/>
+        <Setter Property="VirtualizingPanel.VirtualizationMode"      Value="Recycling"/>
+        <Setter Property="VirtualizingPanel.ScrollUnit"              Value="Pixel"/>
+        <Setter Property="ScrollViewer.CanContentScroll"             Value="True"/>
+        <Setter Property="MinRowHeight" Value="26"/>
     </Style>
 
-    <Style TargetType="DataGridColumnHeader">
-        <Setter Property="Background"      Value="#313244"/>
-        <Setter Property="Foreground"      Value="#a6adc8"/>
-        <Setter Property="Padding"         Value="8,5"/>
-        <Setter Property="BorderBrush"     Value="#45475a"/>
-        <Setter Property="BorderThickness" Value="0,0,1,1"/>
-        <Setter Property="FontWeight"      Value="SemiBold"/>
+    <!-- Accent label for the context bar -->
+    <Style TargetType="TextBlock" x:Key="ContextKey">
+        <Setter Property="Foreground" Value="#6c7086"/>
+        <Setter Property="FontSize"   Value="12"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,4,0"/>
     </Style>
-
-    <Style TargetType="DataGridRow">
-        <Style.Triggers>
-            <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#313244"/>
-                <Setter Property="Foreground" Value="#cdd6f4"/>
-            </Trigger>
-        </Style.Triggers>
-    </Style>
-
-    <Style TargetType="DataGridCell">
-        <Setter Property="Padding" Value="6,4"/>
-        <Setter Property="BorderThickness" Value="0"/>
+    <Style TargetType="TextBlock" x:Key="ContextValue">
         <Setter Property="Foreground" Value="#cdd6f4"/>
-        <Style.Triggers>
-            <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#313244"/>
-                <Setter Property="Foreground" Value="#cdd6f4"/>
-            </Trigger>
-        </Style.Triggers>
+        <Setter Property="FontSize"   Value="12"/>
+        <Setter Property="FontWeight" Value="SemiBold"/>
+        <Setter Property="VerticalAlignment" Value="Center"/>
+        <Setter Property="Margin" Value="0,0,16,0"/>
     </Style>
 
     <!-- ═══ SEPARATOR / SPLITTER ══════════════════════════ -->
@@ -340,5 +342,7 @@
         <Setter Property="Background" Value="#313244"/>
         <Setter Property="Margin"     Value="0,8"/>
     </Style>
+    
+    
 
 </ResourceDictionary>

@@ -48,3 +48,21 @@ public class GitHubCommentDto
     public string Header =>
         $"@{User?.Login ?? "unknown"}  ·  {CreatedAt:yyyy-MM-dd HH:mm}";
 }
+
+public class GitHubRepoDto
+{
+    [JsonPropertyName("name")] public string Name { get; set; } = "";
+    [JsonPropertyName("full_name")] public string FullName { get; set; } = "";
+    [JsonPropertyName("private")] public bool IsPrivate { get; set; }
+    [JsonPropertyName("html_url")] public string HtmlUrl { get; set; } = "";
+    [JsonPropertyName("description")] public string? Description { get; set; }
+    [JsonPropertyName("updated_at")] public DateTime UpdatedAt { get; set; }
+    [JsonPropertyName("owner")] public GitHubUserDto? Owner { get; set; }
+
+    [JsonIgnore]
+    public string Display =>
+        IsPrivate ? $"🔒 {Name}" : Name;
+
+    /// <summary>Just the owner login, e.g. "octocat"</summary>
+    [JsonIgnore] public string OwnerLogin => Owner?.Login ?? "";
+}
