@@ -383,6 +383,7 @@ public partial class MainWindow : Window
         var buffer = new StringBuilder();
         void capture(string line) => buffer.AppendLine(line);
         _runner.OutputReceived += capture;
+        bool gradleTestStarted = false;
 
         try
         {
@@ -396,6 +397,7 @@ public partial class MainWindow : Window
             if (_android.TargetDevice != null)
                 Log($"Target device: {_android.TargetDevice}");
 
+            gradleTestStarted = true;
             int code = await testOp(_cts.Token);
             Log($"===== {testType} exit {code} =====");
 
@@ -410,13 +412,57 @@ public partial class MainWindow : Window
         finally
         {
             _runner.OutputReceived -= capture;
+            if (gradleTestStarted)
+                await StopGradleResourcesAfterTesting(testType);
             _isRunning = false;
             SetStatus("Idle");
         }
     }
 
-    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct)
+    private async Task StopGradleResourcesAfterTesting(string context, PipelineLogger? logger = null)
     {
+        Log($"Stopping Gradle daemons after {context}...");
+        logger?.Line($"Stopping Gradle daemons after {context}.");
+        SetStatus("Stopping Gradle");
+
+        try
+        {
+            using var cleanupCts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            int code = await _android.StopDaemons(cleanupCts.Token);
+            if (code == 0)
+            {
+                Log("Gradle daemons stopped after testing.");
+                logger?.Line("Gradle daemons stopped after testing.");
+            }
+            else
+            {
+                Log($"[WARN] Gradle daemon stop returned exit code {code}.");
+                logger?.Line($"Gradle daemon stop returned exit code {code}.");
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log("[WARN] Timed out stopping Gradle daemons after testing.");
+            logger?.Line("Timed out stopping Gradle daemons after testing.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[WARN] Failed to stop Gradle daemons after testing: {ex.Message}");
+            logger?.Line($"Failed to stop Gradle daemons after testing: {ex.Message}");
+        }
+    }
+
+    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool preferConnectedDevice = false)
+    {
+        if (preferConnectedDevice)
+        {
+            string? deviceSerial = await SelectConnectedPhysicalDevice(ct);
+            if (deviceSerial != null)
+                return deviceSerial;
+
+            Log("No connected physical device found; falling back to emulator.");
+        }
+
         Log("Ensuring emulator is ready for instrument tests...");
         string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
 
@@ -426,7 +472,6 @@ public partial class MainWindow : Window
             return null;
         }
 
-        // Auto-target the emulator so connected tests do not drift to physical devices.
         _android.TargetDevice = serial;
         await RefreshDeviceList();
         if (_deviceSerials.Contains(serial))
@@ -434,6 +479,31 @@ public partial class MainWindow : Window
 
         Log($"Targeting instrument tests to emulator: {serial}");
         return serial;
+    }
+
+    private async Task<string?> SelectConnectedPhysicalDevice(CancellationToken ct)
+    {
+        Log("Checking for connected physical devices...");
+
+        var devices = await _avd.GetDevicesSilent(ct);
+        var physicalDevices = devices
+            .Where(d => d.State == "device" && !d.IsEmulator)
+            .ToList();
+
+        if (physicalDevices.Count == 0)
+            return null;
+
+        var selected = physicalDevices.FirstOrDefault(d =>
+            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase))
+            ?? physicalDevices[0];
+
+        _android.TargetDevice = selected.Serial;
+        await RefreshDeviceList();
+        if (_deviceSerials.Contains(selected.Serial))
+            DeviceCombo.SelectedItem = selected.Serial;
+
+        Log($"Targeting instrument tests to connected device: {selected.Serial}");
+        return selected.Serial;
     }
 
     private void ShowSummary(TestReport report)
@@ -569,7 +639,12 @@ public partial class MainWindow : Window
         }
         catch (OperationCanceledException) { Log("\nWorkflow cancelled."); }
         catch (Exception ex) { Log($"\n[ERROR] {ex.Message}"); }
-        finally { _isRunning = false; SetStatus("Idle"); }
+        finally
+        {
+            await StopGradleResourcesAfterTesting("full test run");
+            _isRunning = false;
+            SetStatus("Idle");
+        }
     }
 
     // ═══════════════════════════════════════════════
@@ -856,6 +931,8 @@ public partial class MainWindow : Window
         _isRunning = true; _cts = new CancellationTokenSource();
         SetStatus(statusText);
         var ct = _cts.Token;
+        bool pipelineTestsStarted = false;
+        bool pipelineTestGradleCleanupDone = false;
 
         try
         {
@@ -884,6 +961,7 @@ public partial class MainWindow : Window
             // ── Unit tests ──
             if (cfg.RunUnitTests)
             {
+                pipelineTestsStarted = true;
                 logger.Section("UNIT TESTS");
                 int code = await _android.RunUnitTests(ct);
                 var report = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
@@ -901,12 +979,13 @@ public partial class MainWindow : Window
             // ── Instrument tests ──
             if (cfg.RunInstrumentTests)
             {
-                logger.Section("ENSURE EMULATOR");
-                string? serial = await PrepareInstrumentTestTarget(ct);
+                pipelineTestsStarted = true;
+                logger.Section("SELECT INSTRUMENT TEST TARGET");
+                string? serial = await PrepareInstrumentTestTarget(ct, preferConnectedDevice: true);
                 if (serial == null)
                 {
-                    Log("[ABORT] No emulator.");
-                    return new PipelineRunResult(false, "No emulator available", logger.FilePath);
+                    Log("[ABORT] No instrument test target.");
+                    return new PipelineRunResult(false, "No instrument test target available", logger.FilePath);
                 }
 
                 logger.Section("INSTRUMENT TESTS");
@@ -921,6 +1000,14 @@ public partial class MainWindow : Window
                         Log("[ABORT] Stopped by failure policy.");
                         return new PipelineRunResult(false, "Stopped after instrument test failure", logger.FilePath);
                     }
+            }
+
+            if (pipelineTestsStarted)
+            {
+                logger.Section("STOP TEST GRADLE DAEMONS");
+                await StopGradleResourcesAfterTesting("pipeline tests", logger);
+                pipelineTestGradleCleanupDone = true;
+                SetStatus(statusText);
             }
 
             // ── Build signed APK ──
@@ -967,6 +1054,13 @@ public partial class MainWindow : Window
         }
         finally
         {
+            if (pipelineTestsStarted && !pipelineTestGradleCleanupDone)
+            {
+                logger.Section("STOP TEST GRADLE DAEMONS");
+                await StopGradleResourcesAfterTesting("pipeline tests", logger);
+                pipelineTestGradleCleanupDone = true;
+            }
+
             await RefreshDeviceList();
             logger.Save();
             Log($"Pipeline log saved: {logger.FilePath}");
