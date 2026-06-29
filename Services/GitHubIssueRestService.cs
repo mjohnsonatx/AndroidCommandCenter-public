@@ -76,8 +76,6 @@ public class GitHubIssueRestService
         return all;
     }
 
-    // ── LIST ISSUES WITH PROPER PAGINATION ────────────────────
-
     public async Task<List<GitHubIssueModel>> GetIssuesAsync(
         string owner, string repo, string token,
         string state = "open", CancellationToken ct = default)
