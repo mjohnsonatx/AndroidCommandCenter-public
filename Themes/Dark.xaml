@@ -193,4 +193,152 @@
         <Setter Property="Padding"     Value="4" />
     </Style>
 
+    <!-- ═══ SIDEBAR ═══════════════════════════════════════ -->
+    <Style TargetType="Expander" x:Key="NavExpander">
+        <Setter Property="Foreground" Value="#cdd6f4"/>
+        <Setter Property="FontWeight"  Value="SemiBold"/>
+        <Setter Property="FontSize"    Value="13"/>
+        <Setter Property="Margin"      Value="0,2,0,0"/>
+        <Setter Property="IsExpanded"  Value="True"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Background"  Value="Transparent"/>
+    </Style>
+
+    <Style TargetType="Button" x:Key="NavButton">
+        <Setter Property="Background" Value="Transparent"/>
+        <Setter Property="Foreground" Value="#a6adc8"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="HorizontalContentAlignment" Value="Left"/>
+        <Setter Property="Padding"  Value="24,6,8,6"/>
+        <Setter Property="FontSize" Value="13"/>
+        <Setter Property="Cursor"   Value="Hand"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                        Padding="{TemplateBinding Padding}" CornerRadius="4">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#313244"/>
+                            <Setter Property="Foreground" Value="#cdd6f4"/>
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="#45475a"/>
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Foreground" Value="#585b70"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Button" x:Key="NavButtonAccent" BasedOn="{StaticResource NavButton}">
+        <Setter Property="Foreground" Value="#89b4fa"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <Style TargetType="Button" x:Key="NavButtonDanger" BasedOn="{StaticResource NavButton}">
+        <Setter Property="Foreground" Value="#e64553"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <Style TargetType="Button" x:Key="NavButtonGreen" BasedOn="{StaticResource NavButton}">
+        <Setter Property="Foreground" Value="#a6e3a1"/>
+        <Setter Property="FontWeight" Value="Bold"/>
+    </Style>
+
+    <!-- ═══ TAB CONTROL ═══════════════════════════════════ -->
+    <Style TargetType="TabControl" x:Key="DarkTabControl">
+        <Setter Property="Background"  Value="#1e1e2e"/>
+        <Setter Property="BorderBrush" Value="#313244"/>
+        <Setter Property="BorderThickness" Value="0,1,0,0"/>
+        <Setter Property="Padding" Value="0"/>
+    </Style>
+
+    <Style TargetType="TabItem" x:Key="DarkTabItem">
+        <Setter Property="Foreground" Value="#6c7086"/>
+        <Setter Property="FontSize"   Value="13"/>
+        <Setter Property="Padding"    Value="14,7"/>
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="TabItem">
+                    <Border x:Name="TabBorder" Padding="{TemplateBinding Padding}"
+                        Background="Transparent" BorderBrush="Transparent"
+                        BorderThickness="0,0,0,2" Margin="4,0,0,0" CornerRadius="4,4,0,0">
+                        <ContentPresenter ContentSource="Header"/>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="TabBorder" Property="Background"    Value="#181825"/>
+                            <Setter TargetName="TabBorder" Property="BorderBrush"   Value="#89b4fa"/>
+                            <Setter Property="Foreground" Value="#cdd6f4"/>
+                            <Setter Property="FontWeight" Value="Bold"/>
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="TabBorder" Property="Background" Value="#313244"/>
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- ═══ DATA GRID ═════════════════════════════════════ -->
+    <Style TargetType="DataGrid" x:Key="DarkDataGrid">
+        <Setter Property="Background"               Value="#11111b"/>
+        <Setter Property="Foreground"                Value="#cdd6f4"/>
+        <Setter Property="BorderBrush"               Value="#313244"/>
+        <Setter Property="BorderThickness"           Value="1"/>
+        <Setter Property="RowBackground"             Value="#1e1e2e"/>
+        <Setter Property="AlternatingRowBackground"  Value="#181825"/>
+        <Setter Property="GridLinesVisibility"       Value="Horizontal"/>
+        <Setter Property="HorizontalGridLinesBrush"  Value="#313244"/>
+        <Setter Property="HeadersVisibility"         Value="Column"/>
+        <Setter Property="SelectionMode"             Value="Single"/>
+        <Setter Property="IsReadOnly"                Value="True"/>
+        <Setter Property="AutoGenerateColumns"       Value="False"/>
+        <Setter Property="CanUserAddRows"            Value="False"/>
+        <Setter Property="CanUserResizeRows"         Value="False"/>
+    </Style>
+
+    <Style TargetType="DataGridColumnHeader">
+        <Setter Property="Background"      Value="#313244"/>
+        <Setter Property="Foreground"      Value="#a6adc8"/>
+        <Setter Property="Padding"         Value="8,5"/>
+        <Setter Property="BorderBrush"     Value="#45475a"/>
+        <Setter Property="BorderThickness" Value="0,0,1,1"/>
+        <Setter Property="FontWeight"      Value="SemiBold"/>
+    </Style>
+
+    <Style TargetType="DataGridRow">
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#313244"/>
+                <Setter Property="Foreground" Value="#cdd6f4"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style TargetType="DataGridCell">
+        <Setter Property="Padding" Value="6,4"/>
+        <Setter Property="BorderThickness" Value="0"/>
+        <Setter Property="Foreground" Value="#cdd6f4"/>
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#313244"/>
+                <Setter Property="Foreground" Value="#cdd6f4"/>
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- ═══ SEPARATOR / SPLITTER ══════════════════════════ -->
+    <Style TargetType="Separator" x:Key="DarkSeparator">
+        <Setter Property="Background" Value="#313244"/>
+        <Setter Property="Margin"     Value="0,8"/>
+    </Style>
+
 </ResourceDictionary>
