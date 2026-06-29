@@ -619,6 +619,10 @@ public partial class MainWindow : Window
 
     private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool preferConnectedDevice = false)
     {
+        string? selectedDeviceSerial = await SelectConnectedPhysicalDevice(ct, selectedOnly: true);
+        if (selectedDeviceSerial != null)
+            return selectedDeviceSerial;
+
         if (preferConnectedDevice)
         {
             string? deviceSerial = await SelectConnectedPhysicalDevice(ct);
@@ -646,9 +650,14 @@ public partial class MainWindow : Window
         return serial;
     }
 
-    private async Task<string?> SelectConnectedPhysicalDevice(CancellationToken ct)
+    private async Task<string?> SelectConnectedPhysicalDevice(CancellationToken ct, bool selectedOnly = false)
     {
-        Log("Checking for connected physical devices...");
+        if (selectedOnly && string.IsNullOrWhiteSpace(_android.TargetDevice))
+            return null;
+
+        Log(selectedOnly
+            ? "Checking selected physical device..."
+            : "Checking for connected physical devices...");
 
         var devices = await _avd.GetDevicesSilent(ct);
         var physicalDevices = devices
@@ -659,8 +668,15 @@ public partial class MainWindow : Window
             return null;
 
         var selected = physicalDevices.FirstOrDefault(d =>
-            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase))
-            ?? physicalDevices[0];
+            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
+
+        if (selected == null)
+        {
+            if (selectedOnly)
+                return null;
+
+            selected = physicalDevices[0];
+        }
 
         _android.TargetDevice = selected.Serial;
         await RefreshDeviceList();
@@ -779,7 +795,7 @@ public partial class MainWindow : Window
                     Action = async ct => { await _cache.CleanCaches(CacheCleanLevel.Medium, ct); return 0; } },
             new() { Name = $"Unit Tests ({v})",
                     Action = _android.RunUnitTests, MaxRetries = 2 },
-            new() { Name = "Ensure Emulator",
+            new() { Name = "Select Instrument Test Target",
                     Action = async ct =>
                     {
                         string? serial = await PrepareInstrumentTestTarget(ct);
