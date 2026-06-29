@@ -1,7 +1,7 @@
 ﻿<Window x:Class="AndroidCommandCenter.FullPipelineWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Full Pipeline" Height="760" Width="600"
+        Title="Full Pipeline" Height="840" Width="600"
         Background="#1e1e2e" WindowStartupLocation="CenterOwner">
     <Window.Resources>
         <ResourceDictionary>
@@ -39,6 +39,61 @@
                 <TextBlock Text="Key password:" Foreground="#a6adc8" Margin="0,8,0,4" />
                 <PasswordBox x:Name="KeyPassBox" Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"
                              Padding="6,4" FontSize="13" PasswordChanged="Pass_Changed" />
+
+                <!-- GitHub source -->
+                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
+                <TextBlock Text="GITHUB SOURCE" FontWeight="Bold" Foreground="#cba6f7" FontSize="14" Margin="0,0,0,8" />
+                <CheckBox x:Name="SyncBranchCheck" Content="Pull selected branch before running"
+                          Foreground="#cdd6f4" FontSize="13" Margin="0,3"
+                          Checked="SyncBranch_Changed" Unchecked="SyncBranch_Changed" />
+                <StackPanel x:Name="GitHubPanel" Margin="0,8,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="12" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Owner:" Foreground="#a6adc8" Margin="0,4" />
+                            <TextBox x:Name="GitHubOwnerBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                            <TextBlock Text="Repository:" Foreground="#a6adc8" Margin="0,4" />
+                            <TextBox x:Name="GitHubRepoBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
+                        </StackPanel>
+                    </Grid>
+
+                    <TextBlock Text="Token:" Foreground="#a6adc8" Margin="0,8,0,4" />
+                    <PasswordBox x:Name="GitHubTokenBox" Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"
+                                 Padding="6,4" FontSize="13" PasswordChanged="GitHubToken_Changed" />
+
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Grid.Column="0">
+                            <TextBlock Text="Remote:" Foreground="#a6adc8" Margin="0,0,0,4" />
+                            <TextBox x:Name="RemoteBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
+                            <TextBlock Text="Branch:" Foreground="#a6adc8" Margin="0,0,0,4" />
+                            <TextBox x:Name="BranchBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
+                        </StackPanel>
+                    </Grid>
+
+                    <Grid Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox x:Name="BranchCombo" Style="{StaticResource DarkComboBox}"
+                                  SelectionChanged="BranchCombo_SelectionChanged" />
+                        <Button Grid.Column="1" x:Name="LoadBranchesBtn" Content="Load Branches"
+                                Style="{StaticResource CmdButton}" Click="LoadBranches_Click" />
+                    </Grid>
+                    <TextBlock x:Name="BranchStatusText" Foreground="#a6adc8" FontSize="12" Margin="0,4,0,0" />
+                </StackPanel>
 
                 <!-- Variants -->
                 <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />

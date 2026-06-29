@@ -2,12 +2,14 @@
 using System.Windows;
 using System.Windows.Controls;
 using AndroidCommandCenter.Models;
+using AndroidCommandCenter.Services;
 
 namespace AndroidCommandCenter;
 
 public partial class FullPipelineWindow : Window
 {
     private readonly CiCdConfig _cfg;
+    private readonly GitHubService _github = new();
     private List<VariantChoice> _choices = new();
 
     public FullPipelineWindow(CiCdConfig cfg, IEnumerable<string> availableVariants, string? activeVariant)
@@ -19,6 +21,13 @@ public partial class FullPipelineWindow : Window
         StorePassBox.Password = cfg.StorePassword;
         KeyAliasBox.Text = cfg.KeyAlias;
         KeyPassBox.Password = cfg.KeyPassword;
+
+        SyncBranchCheck.IsChecked = cfg.SyncBranchBeforePipeline;
+        GitHubOwnerBox.Text = cfg.GitHubOwner;
+        GitHubRepoBox.Text = cfg.GitHubRepository;
+        GitHubTokenBox.Password = cfg.GitHubToken;
+        RemoteBox.Text = string.IsNullOrWhiteSpace(cfg.PipelineRemoteName) ? "origin" : cfg.PipelineRemoteName;
+        BranchBox.Text = string.IsNullOrWhiteSpace(cfg.PipelineBranch) ? "master" : cfg.PipelineBranch;
 
         var variantList = availableVariants.ToList();
         var selectedVariants =
@@ -42,12 +51,75 @@ public partial class FullPipelineWindow : Window
         FailureCombo.SelectedIndex = (int)cfg.FailureAction;
 
         UpdateFailureVisibility();
+        UpdateGitHubVisibility();
         Validate();
     }
 
     private void Field_Changed(object s, TextChangedEventArgs e) => Validate();
     private void Pass_Changed(object s, RoutedEventArgs e) => Validate();
     private void Variant_Changed(object s, RoutedEventArgs e) => Validate();
+    private void GitHubSource_Changed(object s, TextChangedEventArgs e) => Validate();
+    private void GitHubToken_Changed(object s, RoutedEventArgs e) => Validate();
+
+    private void SyncBranch_Changed(object s, RoutedEventArgs e)
+    {
+        UpdateGitHubVisibility();
+        Validate();
+    }
+
+    private void UpdateGitHubVisibility() =>
+        GitHubPanel.Visibility = SyncBranchCheck.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
+
+    private async void LoadBranches_Click(object s, RoutedEventArgs e)
+    {
+        string owner = GitHubOwnerBox.Text.Trim();
+        string repo = GitHubRepoBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(repo))
+        {
+            BranchStatusText.Text = "Enter owner and repository first.";
+            return;
+        }
+
+        LoadBranchesBtn.IsEnabled = false;
+        BranchStatusText.Text = "Loading branches...";
+
+        try
+        {
+            var branches = await _github.GetBranchesAsync(
+                owner,
+                repo,
+                GitHubTokenBox.Password,
+                CancellationToken.None);
+
+            BranchCombo.ItemsSource = branches;
+            string selectedBranch = BranchBox.Text.Trim();
+            BranchCombo.SelectedItem = branches.Contains(selectedBranch, StringComparer.OrdinalIgnoreCase)
+                ? branches.First(b => string.Equals(b, selectedBranch, StringComparison.OrdinalIgnoreCase))
+                : branches.FirstOrDefault();
+
+            if (BranchCombo.SelectedItem is string branch)
+                BranchBox.Text = branch;
+
+            BranchStatusText.Text = branches.Count == 0
+                ? "No branches found."
+                : $"Loaded {branches.Count} branch(es).";
+        }
+        catch (Exception ex)
+        {
+            BranchStatusText.Text = ex.Message;
+        }
+        finally
+        {
+            LoadBranchesBtn.IsEnabled = true;
+            Validate();
+        }
+    }
+
+    private void BranchCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
+    {
+        if (BranchCombo.SelectedItem is string branch)
+            BranchBox.Text = branch;
+    }
 
     private void TestCheck_Changed(object s, RoutedEventArgs e)
     {
@@ -69,7 +141,9 @@ public partial class FullPipelineWindow : Window
         bool firebase = !string.IsNullOrWhiteSpace(AppIdBox.Text)
                      && !string.IsNullOrWhiteSpace(JsonBox.Text);
         bool variant = _choices.Any(c => c.IsSelected);
-        RunBtn.IsEnabled = signing && firebase && variant;
+        bool source = SyncBranchCheck.IsChecked != true ||
+                      (IsSimpleGitName(RemoteBox.Text) && IsSimpleGitName(BranchBox.Text));
+        RunBtn.IsEnabled = signing && firebase && variant && source;
     }
 
     private void BrowseKeystore_Click(object s, RoutedEventArgs e)
@@ -92,6 +166,13 @@ public partial class FullPipelineWindow : Window
         _cfg.KeyPassword = KeyPassBox.Password;
         _cfg.BuildVariants = _choices.Where(c => c.IsSelected).Select(c => c.Name).ToList();
 
+        _cfg.SyncBranchBeforePipeline = SyncBranchCheck.IsChecked == true;
+        _cfg.GitHubOwner = GitHubOwnerBox.Text.Trim();
+        _cfg.GitHubRepository = GitHubRepoBox.Text.Trim();
+        _cfg.GitHubToken = GitHubTokenBox.Password;
+        _cfg.PipelineRemoteName = string.IsNullOrWhiteSpace(RemoteBox.Text) ? "origin" : RemoteBox.Text.Trim();
+        _cfg.PipelineBranch = BranchBox.Text.Trim();
+
         _cfg.FirebaseAppId = AppIdBox.Text.Trim();
         _cfg.CredentialsJsonPath = JsonBox.Text.Trim();
         _cfg.TesterGroups = GroupsBox.Text.Trim();
@@ -106,4 +187,13 @@ public partial class FullPipelineWindow : Window
     }
 
     private void Cancel_Click(object s, RoutedEventArgs e) { DialogResult = false; Close(); }
+
+    private static bool IsSimpleGitName(string value)
+    {
+        value = value.Trim();
+        return !string.IsNullOrWhiteSpace(value) &&
+               !value.Any(char.IsWhiteSpace) &&
+               !value.Contains('"') &&
+               !value.Contains('\'');
+    }
 }

@@ -20,6 +20,7 @@ public partial class MainWindow : Window
     private readonly AndroidService _android;
     private readonly AvdManager _avd;
     private readonly GitService _git;
+    private readonly GitHubService _github = new();
     private readonly CacheManager _cache;
     private readonly WorkflowEngine _workflow = new();
     private readonly FlavorDetector _flavors = new();
@@ -34,6 +35,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _variants = new();
     private readonly ObservableCollection<string> _avds = new();
     private readonly ObservableCollection<string> _deviceSerials = new();
+    private readonly ObservableCollection<string> _githubBranches = new();
 
     // ── Timers ───────────────────────────────────
     private readonly DispatcherTimer _deviceTimer;
@@ -63,6 +65,7 @@ public partial class MainWindow : Window
         _runner.OutputReceived += line => Dispatcher.Invoke(() => Log(line));
         _avd.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _git.LogMessage += line => Dispatcher.Invoke(() => Log(line));
+        _github.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _cache.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _workflow.LogMessage += line => Dispatcher.Invoke(() => Log(line));
         _flavors.LogMessage += line => Dispatcher.Invoke(() => Log(line));
@@ -78,6 +81,8 @@ public partial class MainWindow : Window
         VariantCombo.ItemsSource = _variants;
         AvdCombo.ItemsSource = _avds;
         DeviceCombo.ItemsSource = _deviceSerials;
+        MainBranchCombo.ItemsSource = _githubBranches;
+        LoadMainGitHubSourceControls();
 
         foreach (var p in _settings.ProjectPaths) _projects.Add(p);
         if (_settings.LastSelectedProject != null)
@@ -261,6 +266,166 @@ public partial class MainWindow : Window
         _settings.Save();
         Log($"\nActive project: {sel}");
         LoadVariants(sel);
+    }
+
+    // ═══════════════════════════════════════════════
+    //  GITHUB SOURCE
+    // ═══════════════════════════════════════════════
+    private void LoadMainGitHubSourceControls()
+    {
+        var cfg = _settings.CiCd;
+        MainGitHubOwnerBox.Text = cfg.GitHubOwner;
+        MainGitHubRepoBox.Text = cfg.GitHubRepository;
+        MainGitHubTokenBox.Password = cfg.GitHubToken;
+        MainGitRemoteBox.Text = string.IsNullOrWhiteSpace(cfg.PipelineRemoteName) ? "origin" : cfg.PipelineRemoteName;
+        MainBranchBox.Text = string.IsNullOrWhiteSpace(cfg.PipelineBranch) ? "master" : cfg.PipelineBranch;
+
+        if (!string.IsNullOrWhiteSpace(MainBranchBox.Text) &&
+            !_githubBranches.Contains(MainBranchBox.Text))
+        {
+            _githubBranches.Add(MainBranchBox.Text);
+        }
+
+        MainBranchCombo.SelectedItem = _githubBranches.Contains(MainBranchBox.Text)
+            ? MainBranchBox.Text
+            : null;
+    }
+
+    private void SaveMainGitHubSourceControls()
+    {
+        var cfg = _settings.CiCd;
+        cfg.GitHubOwner = MainGitHubOwnerBox.Text.Trim();
+        cfg.GitHubRepository = MainGitHubRepoBox.Text.Trim();
+        cfg.GitHubToken = MainGitHubTokenBox.Password;
+        cfg.PipelineRemoteName = string.IsNullOrWhiteSpace(MainGitRemoteBox.Text)
+            ? "origin"
+            : MainGitRemoteBox.Text.Trim();
+        cfg.PipelineBranch = MainBranchBox.Text.Trim();
+        _settings.Save();
+    }
+
+    private async void MainLoadBranches_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireIdle()) return;
+
+        SaveMainGitHubSourceControls();
+        string owner = _settings.CiCd.GitHubOwner;
+        string repository = _settings.CiCd.GitHubRepository;
+        if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(repository))
+        {
+            Log("[!] Enter GitHub owner and repo first.");
+            return;
+        }
+
+        _isRunning = true;
+        _cts = new CancellationTokenSource();
+        SetStatus("Loading branches");
+        MainLoadBranchesButton.IsEnabled = false;
+        MainPullBranchButton.IsEnabled = false;
+
+        try
+        {
+            Log($"\nLoading branches from GitHub: {owner}/{repository}");
+            var branches = await _github.GetBranchesAsync(
+                owner,
+                repository,
+                _settings.CiCd.GitHubToken,
+                _cts.Token);
+
+            _githubBranches.Clear();
+            foreach (string branch in branches)
+                _githubBranches.Add(branch);
+
+            string selectedBranch = _settings.CiCd.PipelineBranch;
+            if (!string.IsNullOrWhiteSpace(selectedBranch) &&
+                branches.Contains(selectedBranch, StringComparer.OrdinalIgnoreCase))
+            {
+                MainBranchCombo.SelectedItem = branches.First(
+                    b => string.Equals(b, selectedBranch, StringComparison.OrdinalIgnoreCase));
+            }
+            else if (branches.Count > 0)
+            {
+                MainBranchCombo.SelectedItem = branches[0];
+            }
+
+            Log($"GitHub branches loaded: {branches.Count}");
+        }
+        catch (OperationCanceledException)
+        {
+            Log("GitHub branch load cancelled.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[ERROR] {ex.Message}");
+        }
+        finally
+        {
+            MainLoadBranchesButton.IsEnabled = true;
+            MainPullBranchButton.IsEnabled = true;
+            _isRunning = false;
+            SetStatus("Idle");
+        }
+    }
+
+    private void MainBranchCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (MainBranchCombo.SelectedItem is not string branch) return;
+        MainBranchBox.Text = branch;
+        SaveMainGitHubSourceControls();
+    }
+
+    private async void MainPullBranch_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        SaveMainGitHubSourceControls();
+        string remote = _settings.CiCd.PipelineRemoteName;
+        string branch = _settings.CiCd.PipelineBranch;
+
+        if (!IsSimpleGitName(remote) || !IsSimpleGitName(branch))
+        {
+            Log("[!] Enter a valid remote and branch first.");
+            return;
+        }
+
+        _isRunning = true;
+        _cts = new CancellationTokenSource();
+        SetStatus("Pulling branch");
+        MainLoadBranchesButton.IsEnabled = false;
+        MainPullBranchButton.IsEnabled = false;
+
+        try
+        {
+            Log($"\n===== Pull Branch {remote}/{branch} =====");
+            int code = await _git.UpdateToRemoteBranch(_android.ProjectPath, remote, branch, _cts.Token);
+            Log($"===== Pull Branch exit {code} =====");
+            if (code == 0)
+                Log($"Active project is ready on {remote}/{branch}.");
+        }
+        catch (OperationCanceledException)
+        {
+            Log("Pull branch cancelled.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[ERROR] {ex.Message}");
+        }
+        finally
+        {
+            MainLoadBranchesButton.IsEnabled = true;
+            MainPullBranchButton.IsEnabled = true;
+            _isRunning = false;
+            SetStatus("Idle");
+        }
+    }
+
+    private static bool IsSimpleGitName(string value)
+    {
+        value = value.Trim();
+        return !string.IsNullOrWhiteSpace(value) &&
+               !value.Any(char.IsWhiteSpace) &&
+               !value.Contains('"') &&
+               !value.Contains('\'');
     }
 
     // ═══════════════════════════════════════════════
@@ -749,10 +914,11 @@ public partial class MainWindow : Window
 
     private async void AutomationConfig_Click(object s, RoutedEventArgs e)
     {
-        var dlg = new AutomationWindow(_settings.Automation) { Owner = this };
+        var dlg = new AutomationWindow(_settings.Automation, _settings.CiCd) { Owner = this };
         if (dlg.ShowDialog() != true) return;
 
         _settings.Save();
+        LoadMainGitHubSourceControls();
         Log("Automation config saved.");
 
         if (dlg.RunNow)
@@ -802,9 +968,26 @@ public partial class MainWindow : Window
         var dlg = new FullPipelineWindow(cfg, _variants, _android.SelectedVariant) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         _settings.Save();
+        LoadMainGitHubSourceControls();
         UpdateCiCdButtonStates();
 
-        await RunFullPipeline(cfg);
+        Func<PipelineLogger, CancellationToken, Task<bool>>? preflight = null;
+        if (cfg.SyncBranchBeforePipeline)
+        {
+            preflight = async (logger, ct) =>
+            {
+                logger.Line($"Remote: {cfg.PipelineRemoteName}");
+                logger.Line($"Branch: {cfg.PipelineBranch}");
+                int code = await _git.UpdateToRemoteBranch(
+                    _android.ProjectPath,
+                    cfg.PipelineRemoteName,
+                    cfg.PipelineBranch,
+                    ct);
+                return code == 0;
+            };
+        }
+
+        await RunFullPipeline(cfg, preflight);
     }
 
     private bool ValidateAutomatedDeploymentConfig(CiCdConfig cfg, AutomationConfig automation)
@@ -897,7 +1080,13 @@ public partial class MainWindow : Window
         ReleaseNotes = source.ReleaseNotes,
         RunUnitTests = source.RunUnitTests,
         RunInstrumentTests = source.RunInstrumentTests,
-        FailureAction = source.FailureAction
+        FailureAction = source.FailureAction,
+        GitHubOwner = source.GitHubOwner,
+        GitHubRepository = source.GitHubRepository,
+        EncryptedGitHubToken = source.EncryptedGitHubToken,
+        PipelineRemoteName = source.PipelineRemoteName,
+        PipelineBranch = source.PipelineBranch,
+        SyncBranchBeforePipeline = source.SyncBranchBeforePipeline
     };
 
     private static AutomationConfig CloneAutomationConfig(AutomationConfig source) => new()

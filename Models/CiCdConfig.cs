@@ -15,6 +15,14 @@ public enum TestFailureAction
 
 public class CiCdConfig
 {
+    // -- GitHub source selection --
+    public string GitHubOwner { get; set; } = "";
+    public string GitHubRepository { get; set; } = "";
+    public string? EncryptedGitHubToken { get; set; }
+    public string PipelineRemoteName { get; set; } = "origin";
+    public string PipelineBranch { get; set; } = "master";
+    public bool SyncBranchBeforePipeline { get; set; }
+
     // ── Signing ──
     public string KeystorePath { get; set; } = "";
     public string KeyAlias { get; set; } = "";
@@ -41,11 +49,17 @@ public class CiCdConfig
     public TestFailureAction FailureAction { get; set; } = TestFailureAction.AutomaticBounceBack;
 
     // ── Plain-text accessors (never serialized) ──
+    [JsonIgnore] public string GitHubToken { get => Dec(EncryptedGitHubToken); set => EncryptedGitHubToken = Enc(value); }
     [JsonIgnore] public string StorePassword { get => Dec(EncryptedStorePassword); set => EncryptedStorePassword = Enc(value); }
     [JsonIgnore] public string KeyPassword { get => Dec(EncryptedKeyPassword); set => EncryptedKeyPassword = Enc(value); }
     [JsonIgnore] public string FirebaseToken { get => Dec(EncryptedFirebaseToken); set => EncryptedFirebaseToken = Enc(value); }
 
     // ── Validation ──
+    [JsonIgnore]
+    public bool IsGitHubConfigured =>
+        !string.IsNullOrWhiteSpace(GitHubOwner) &&
+        !string.IsNullOrWhiteSpace(GitHubRepository);
+
     [JsonIgnore]
     public bool IsSigningConfigured =>
         !string.IsNullOrEmpty(KeystorePath) && File.Exists(KeystorePath) &&

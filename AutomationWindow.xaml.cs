@@ -2,22 +2,29 @@ using System.Windows;
 using System.Windows.Controls;
 using AndroidCommandCenter.Models;
 using System.Globalization;
+using AndroidCommandCenter.Services;
 
 namespace AndroidCommandCenter;
 
 public partial class AutomationWindow : Window
 {
     private readonly AutomationConfig _cfg;
+    private readonly CiCdConfig _ciCd;
+    private readonly GitHubService _github = new();
 
     public bool RunNow { get; private set; }
 
-    public AutomationWindow(AutomationConfig cfg)
+    public AutomationWindow(AutomationConfig cfg, CiCdConfig ciCd)
     {
         InitializeComponent();
         _cfg = cfg;
+        _ciCd = ciCd;
 
         RemoteBox.Text = cfg.RemoteName;
         BranchBox.Text = cfg.SourceBranch;
+        GitHubOwnerBox.Text = ciCd.GitHubOwner;
+        GitHubRepoBox.Text = ciCd.GitHubRepository;
+        GitHubTokenBox.Password = ciCd.GitHubToken;
         RecurringCheck.IsChecked = cfg.RecurringRunsEnabled;
         RunTimesBox.Text = cfg.RecurringRunTimes;
         FailureCombo.SelectedIndex = (int)cfg.FailureAction;
@@ -37,6 +44,59 @@ public partial class AutomationWindow : Window
     }
 
     private void Field_Changed(object s, TextChangedEventArgs e) => Validate();
+    private void GitHubSource_Changed(object s, TextChangedEventArgs e) => Validate();
+    private void GitHubToken_Changed(object s, RoutedEventArgs e) => Validate();
+
+    private async void LoadBranches_Click(object s, RoutedEventArgs e)
+    {
+        string owner = GitHubOwnerBox.Text.Trim();
+        string repo = GitHubRepoBox.Text.Trim();
+        if (string.IsNullOrWhiteSpace(owner) || string.IsNullOrWhiteSpace(repo))
+        {
+            BranchStatusText.Text = "Enter owner and repository first.";
+            return;
+        }
+
+        LoadBranchesBtn.IsEnabled = false;
+        BranchStatusText.Text = "Loading branches...";
+
+        try
+        {
+            var branches = await _github.GetBranchesAsync(
+                owner,
+                repo,
+                GitHubTokenBox.Password,
+                CancellationToken.None);
+
+            BranchCombo.ItemsSource = branches;
+            string selectedBranch = BranchBox.Text.Trim();
+            BranchCombo.SelectedItem = branches.Contains(selectedBranch, StringComparer.OrdinalIgnoreCase)
+                ? branches.First(b => string.Equals(b, selectedBranch, StringComparison.OrdinalIgnoreCase))
+                : branches.FirstOrDefault();
+
+            if (BranchCombo.SelectedItem is string branch)
+                BranchBox.Text = branch;
+
+            BranchStatusText.Text = branches.Count == 0
+                ? "No branches found."
+                : $"Loaded {branches.Count} branch(es).";
+        }
+        catch (Exception ex)
+        {
+            BranchStatusText.Text = ex.Message;
+        }
+        finally
+        {
+            LoadBranchesBtn.IsEnabled = true;
+            Validate();
+        }
+    }
+
+    private void BranchCombo_SelectionChanged(object s, SelectionChangedEventArgs e)
+    {
+        if (BranchCombo.SelectedItem is string branch)
+            BranchBox.Text = branch;
+    }
 
     private void RecurringCheck_Changed(object s, RoutedEventArgs e)
     {
@@ -87,6 +147,9 @@ public partial class AutomationWindow : Window
 
         _cfg.RemoteName = RemoteBox.Text.Trim();
         _cfg.SourceBranch = BranchBox.Text.Trim();
+        _ciCd.GitHubOwner = GitHubOwnerBox.Text.Trim();
+        _ciCd.GitHubRepository = GitHubRepoBox.Text.Trim();
+        _ciCd.GitHubToken = GitHubTokenBox.Password;
         _cfg.RecurringRunsEnabled = RecurringCheck.IsChecked == true;
         _cfg.RecurringRunTimes = runTimes.Count > 0
             ? string.Join(", ", runTimes.Select(t => t.ToString(@"hh\:mm", CultureInfo.InvariantCulture)))

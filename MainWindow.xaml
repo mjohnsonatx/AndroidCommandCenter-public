@@ -24,6 +24,8 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="65" />
@@ -70,6 +72,76 @@
                             Click="RefreshAvds_Click" ToolTip="Reload AVD list" />
                     <Button Content="Reports" Style="{StaticResource CmdButton}"
                             Click="OpenReports_Click" ToolTip="Open saved test reports" />
+                </StackPanel>
+
+                <!-- GitHub -->
+                <TextBlock Grid.Row="3" Grid.Column="0"
+                           Text="GitHub:" Foreground="#a6adc8" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,6,0,0" />
+                <Grid Grid.Row="3" Grid.Column="1" Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Owner:" Foreground="#a6adc8"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" x:Name="MainGitHubOwnerBox"
+                             Style="{StaticResource DarkTextBox}" />
+                    <TextBlock Grid.Column="3" Text="Repo:" Foreground="#a6adc8"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="4" x:Name="MainGitHubRepoBox"
+                             Style="{StaticResource DarkTextBox}" />
+                    <TextBlock Grid.Column="6" Text="Token:" Foreground="#a6adc8"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <PasswordBox Grid.Column="7" x:Name="MainGitHubTokenBox"
+                                 Background="#313244" Foreground="#cdd6f4"
+                                 BorderBrush="#45475a" Padding="6,4" FontSize="13" />
+                </Grid>
+                <StackPanel Grid.Row="3" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button x:Name="MainLoadBranchesButton"
+                            Content="Load Branches"
+                            Style="{StaticResource CmdButton}"
+                            Click="MainLoadBranches_Click" />
+                </StackPanel>
+
+                <!-- Branch -->
+                <TextBlock Grid.Row="4" Grid.Column="0"
+                           Text="Branch:" Foreground="#a6adc8" FontWeight="Bold"
+                           VerticalAlignment="Center" Margin="0,6,0,0" />
+                <Grid Grid.Row="4" Grid.Column="1" Margin="0,6,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="110" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="220" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="Remote:" Foreground="#a6adc8"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="1" x:Name="MainGitRemoteBox"
+                             Style="{StaticResource DarkTextBox}" />
+                    <TextBlock Grid.Column="3" Text="Name:" Foreground="#a6adc8"
+                               VerticalAlignment="Center" Margin="0,0,6,0" />
+                    <TextBox Grid.Column="4" x:Name="MainBranchBox"
+                             Style="{StaticResource DarkTextBox}" />
+                    <ComboBox Grid.Column="6" x:Name="MainBranchCombo"
+                              Style="{StaticResource DarkComboBox}"
+                              SelectionChanged="MainBranchCombo_SelectionChanged" />
+                </Grid>
+                <StackPanel Grid.Row="4" Grid.Column="2" Orientation="Horizontal" Margin="0,6,0,0">
+                    <Button x:Name="MainPullBranchButton"
+                            Content="Pull Branch"
+                            Style="{StaticResource CmdButton}"
+                            Click="MainPullBranch_Click"
+                            ToolTip="Fetch, checkout, and fast-forward pull the selected branch" />
                 </StackPanel>
             </Grid>
         </Border>
