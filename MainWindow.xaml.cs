@@ -872,7 +872,12 @@ public partial class MainWindow : Window
         {
             int code = await _android.BuildSignedApk(cfg, cfg.BuildVariants, _cts.Token);
             Log($"Build exit {code}");
-            if (code == 0) { var apk = FindApk(); Log(apk != null ? $"APK: {apk}" : "[WARN] APK not found."); }
+            if (code == 0)
+                foreach (var v in cfg.BuildVariants)
+                {
+                    var apk = FindApk(v);
+                    Log(apk != null ? $"APK ({v}): {apk}" : $"[WARN] APK for variant '{v}' not found.");
+                }
         }
         catch (OperationCanceledException) { Log("Cancelled."); }
         catch (Exception ex) { Log($"[ERROR] {ex.Message}"); }
@@ -884,7 +889,7 @@ public partial class MainWindow : Window
         if (!RequireProject() || !RequireIdle()) return;
         SyncProfileToCiCdConfig();
         var cfg = _settings.CiCd;
-        var dlg = new DeployFirebaseWindow(cfg, FindApk()) { Owner = this };
+        var dlg = new DeployFirebaseWindow(cfg, FindApk(DeployVariant(cfg))) { Owner = this };
         if (dlg.ShowDialog() != true) return;
         _settings.Save(); SyncCiCdConfigToProfile();
 
@@ -994,9 +999,12 @@ public partial class MainWindow : Window
 
             logger.Section("BUILD SIGNED APK");
             if (await _android.BuildSignedApk(cfg, cfg.BuildVariants, ct) != 0) return Fin(false, "Build failed");
-            var apk = FindApk();
-            if (apk == null) return Fin(false, "APK not found after build");
-            Log($"APK: {apk}");
+            string deployVariant = DeployVariant(cfg);
+            if (cfg.BuildVariants.Count > 1)
+                Log($"Built variants: {string.Join(", ", cfg.BuildVariants)}. Deploying: {deployVariant}");
+            var apk = FindApk(deployVariant);
+            if (apk == null) return Fin(false, $"APK for variant '{deployVariant}' not found after build");
+            Log($"APK ({deployVariant}): {apk}");
 
             logger.Section("DEPLOY TO FIREBASE"); _firebase.CliPath = cfg.FirebaseCliPath;
             int deploy = await _firebase.Distribute(apk, cfg.FirebaseAppId, cfg.TesterGroups, cfg.TesterEmails,
@@ -1046,14 +1054,37 @@ public partial class MainWindow : Window
         return sb.ToString();
     }
 
-    private string? FindApk()
+    // Resolves the APK for one specific variant. Gradle writes APKs to
+    // outputs/apk/<flavor>/<buildType>/ (or outputs/apk/<buildType>/ when the
+    // project has no flavors), and the concatenated directory segments equal the
+    // variant name case-insensitively ("dev"+"qa" == "DevQa"). Matching on the
+    // path instead of newest-file-anywhere guarantees a multi-variant build can
+    // never hand a differently-signed sibling APK to the Firebase deploy step -
+    // installing that on a tester device forces an uninstall and wipes app data.
+    private string? FindApk(string variant)
     {
         var root = Path.Combine(_android.ProjectPath, "app", "build", "outputs", "apk");
-        if (!Directory.Exists(root)) return null;
+        if (!Directory.Exists(root) || string.IsNullOrWhiteSpace(variant)) return null;
         return Directory.GetFiles(root, "*.apk", SearchOption.AllDirectories)
             .Where(f => !Path.GetFileName(f).Contains("unsigned"))
+            .Where(f => ApkVariantOf(root, f).Equals(variant.Trim(), StringComparison.OrdinalIgnoreCase))
             .OrderByDescending(File.GetLastWriteTime).FirstOrDefault();
     }
+
+    private static string ApkVariantOf(string root, string apkPath)
+    {
+        var dir = Path.GetDirectoryName(Path.GetRelativePath(root, apkPath)) ?? "";
+        return string.Concat(dir.Split(
+            [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+            StringSplitOptions.RemoveEmptyEntries));
+    }
+
+    // The single variant whose APK is uploaded to Firebase: the first selected
+    // build variant, falling back to the active variant. Kept deterministic so
+    // repeat deploys always ship the same (identically signed) variant.
+    private string DeployVariant(CiCdConfig cfg) =>
+        cfg.BuildVariants.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v))?.Trim()
+        ?? _android.SelectedVariant;
 
     #endregion
 

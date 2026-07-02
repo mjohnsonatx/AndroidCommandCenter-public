@@ -26,6 +26,13 @@ public class AndroidService
 
     
     // ── Signed APK build (one or more variants) ─
+    // Firebase-deploy builds ONLY. The android.injected.signing.* properties
+    // override the signing config of EVERY build type (including debug), so this
+    // method must never be reused for test or dev builds: an APK whose certificate
+    // differs from the one already installed forces Android to uninstall first,
+    // wiping all app data on the device. For the same reason a missing/broken
+    // signing config is a hard failure here - silently falling back to Gradle's
+    // default keys would deploy a differently-signed APK to Firebase testers.
     public Task<int> BuildSignedApk(CiCdConfig config, IEnumerable<string> variants, CancellationToken ct)
     {
         var selectedVariants = variants
@@ -35,15 +42,17 @@ public class AndroidService
             .ToList();
         if (selectedVariants.Count == 0)
             throw new InvalidOperationException("Select at least one variant to build.");
+        if (!config.IsSigningConfigured)
+            throw new InvalidOperationException(
+                "Signing is not configured (keystore path/alias/passwords). Refusing to build " +
+                "a deploy APK with default keys: deploying it would change the app's signing " +
+                "certificate and wipe all app data on testers' devices when they install it.");
 
         string args = string.Join(" ", selectedVariants.Select(v => $"assemble{v}"));
-        if (config.IsSigningConfigured)
-        {
-            args += $" -Pandroid.injected.signing.store.file=\"{config.KeystorePath}\"" +
-                    $" -Pandroid.injected.signing.store.password={config.StorePassword}" +
-                    $" -Pandroid.injected.signing.key.alias={config.KeyAlias}" +
-                    $" -Pandroid.injected.signing.key.password={config.KeyPassword}";
-        }
+        args += $" -Pandroid.injected.signing.store.file=\"{config.KeystorePath}\"" +
+                $" -Pandroid.injected.signing.store.password={config.StorePassword}" +
+                $" -Pandroid.injected.signing.key.alias={config.KeyAlias}" +
+                $" -Pandroid.injected.signing.key.password={config.KeyPassword}";
         return _runner.RunAsync(Gradlew, args, ProjectPath, ct);
     }
 
@@ -58,6 +67,9 @@ public class AndroidService
         _runner.RunAsync(Gradlew, "assemble", ProjectPath, ct);
 
     // ── Tests ──────────────────────────────────
+    // Test (and plain assemble) tasks intentionally receive NO injected signing
+    // properties: they must build with the project's normal per-build-type keys
+    // so a test install never changes the certificate on the attached device.
     public Task<int> RunUnitTests(CancellationToken ct) =>
         _runner.RunAsync(
             Gradlew, $"test{SelectedVariant}UnitTest", ProjectPath, ct);
