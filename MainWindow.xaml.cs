@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _variants = new();
     private readonly ObservableCollection<string> _avds = new();
     private readonly ObservableCollection<string> _deviceSerials = new();
+    private readonly ObservableCollection<string> _authorizedDevices = new();
     private readonly ObservableCollection<string> _githubBranches = new();
     private readonly ObservableCollection<GitHubIssueModel> _githubIssues = new();
     private readonly ObservableCollection<GitHubCommentDto> _issueComments = new();
@@ -85,6 +86,7 @@ public partial class MainWindow : Window
         VariantCombo.ItemsSource = _variants;
         AvdCombo.ItemsSource = _avds;
         DeviceCombo.ItemsSource = _deviceSerials;
+        AuthorizedDevicesList.ItemsSource = _authorizedDevices;
         MainBranchCombo.ItemsSource = _githubBranches;
         IssuesGrid.ItemsSource = _githubIssues;
         IssueCommentsPanel.ItemsSource = _issueComments;
@@ -187,6 +189,42 @@ public partial class MainWindow : Window
             _android.TargetDevice = sel == "(All connected)" ? null : sel;
     }
 
+    private void RefreshAuthorizedDevices()
+    {
+        _authorizedDevices.Clear();
+        if (string.IsNullOrEmpty(_android.ProjectPath)) return;
+        foreach (var serial in _settings.GetAuthorizedTestDevices(_android.ProjectPath))
+            _authorizedDevices.Add(serial);
+    }
+
+    private void AuthorizeDevice_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        string serial = AuthorizedSerialBox.Text.Trim();
+        if (serial.Length == 0 && DeviceCombo.SelectedItem is string sel && sel != "(All connected)")
+            serial = sel;
+        if (serial.Length == 0)
+        { Log("[!] Enter a serial or select a specific device in the Target combo first."); return; }
+
+        if (_settings.AddAuthorizedTestDevice(_android.ProjectPath, serial))
+            Log($"Authorized test device for this project: {serial}");
+        else
+            Log($"{serial} is already on this project's authorized test device list.");
+        AuthorizedSerialBox.Text = "";
+        RefreshAuthorizedDevices();
+    }
+
+    private void RemoveAuthorizedDevice_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        if (AuthorizedDevicesList.SelectedItem is not string serial)
+        { Log("[!] Select a serial in the authorized list first."); return; }
+
+        if (_settings.RemoveAuthorizedTestDevice(_android.ProjectPath, serial))
+            Log($"Removed authorized test device: {serial}");
+        RefreshAuthorizedDevices();
+    }
+
     #endregion
 
     #region Project Management + Profile Loading
@@ -216,6 +254,7 @@ public partial class MainWindow : Window
         _settings.LastSelectedProject = sel; _settings.Save();
         Log($"\nActive project: {sel}");
         LoadVariants(sel);
+        RefreshAuthorizedDevices();
         ActivateProfileForProject(sel);
     }
 
@@ -717,20 +756,33 @@ public partial class MainWindow : Window
     // any connected physical device, then an emulator as a last resort. NOTE that
     // connectedAndroidTest ends by UNINSTALLING the app under test, which deletes
     // ALL of its data on the target device. That is accepted behavior for test
-    // devices here, but it must never happen silently: whenever the target is a
-    // physical device, an unmissable banner is written to the run log first.
+    // devices here, but it is guarded two ways: when the project's authorized test
+    // device list is non-empty, only serials on it may be targeted (emulators are
+    // exempt - their data is disposable), and whenever the target is a physical
+    // device, an unmissable banner is written to the run log first.
     private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct)
     {
         var devices = await _avd.GetDevicesSilent(ct);
+        var authorized = _settings.GetAuthorizedTestDevices(_android.ProjectPath);
+        bool Authorized(DeviceInfo d) => authorized.Count == 0 ||
+            authorized.Contains(d.Serial, StringComparer.OrdinalIgnoreCase);
+
         var selected = devices.FirstOrDefault(d => d.State == "device" &&
             string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
 
         // An explicitly selected emulator is respected as an override; otherwise
-        // take the selected phone, or auto-pick the first connected phone.
+        // take the selected phone, or auto-pick the first authorized connected phone.
         if (selected?.IsEmulator != true)
         {
+            if (selected != null && !Authorized(selected))
+            {
+                Log($"[WARN] Selected device {selected.Serial} is NOT on this project's authorized " +
+                    "test device list - it will not be used for instrument tests. " +
+                    "Authorize it under Test Devices to allow it.");
+                selected = null;
+            }
             var target = selected
-                ?? devices.FirstOrDefault(d => d.State == "device" && !d.IsEmulator);
+                ?? devices.FirstOrDefault(d => d.State == "device" && !d.IsEmulator && Authorized(d));
             if (target != null)
             {
                 _android.TargetDevice = target.Serial; await RefreshDeviceList();
@@ -738,7 +790,10 @@ public partial class MainWindow : Window
                 AnnounceInstrumentWipe(target.Serial);
                 return target.Serial;
             }
-            Log("No physical device connected; falling back to an emulator for instrument tests.");
+            Log(devices.Any(d => d.State == "device" && !d.IsEmulator)
+                ? "Connected phone(s) present but none are on this project's authorized test " +
+                  "device list; falling back to an emulator for instrument tests."
+                : "No physical device connected; falling back to an emulator for instrument tests.");
         }
 
         string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
