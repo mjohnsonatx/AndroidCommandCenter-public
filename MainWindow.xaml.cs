@@ -680,9 +680,12 @@ public partial class MainWindow : Window
             if (ensureEmulator && await PrepareInstrumentTestTarget(_cts.Token) == null) return;
             Log($"\n===== {testType} ({_android.SelectedVariant}) =====");
             started = true;
+            var startedAt = DateTime.Now;
             int code = await testOp(_cts.Token);
             Log($"===== {testType} exit {code} =====");
-            var rpt = _testReports.ParseResults(_android.ProjectPath, testType);
+            var rpt = _testReports.ParseResults(_android.ProjectPath, testType, startedAt);
+            if (rpt.Total == 0)
+                Log($"[WARN] {testType} produced NO results this run - check the Gradle output above.");
             ShowSummary(rpt);
             _testReports.SaveReport(rpt, _android.ProjectPath, _android.SelectedVariant, buf.ToString());
         }
@@ -708,11 +711,28 @@ public partial class MainWindow : Window
         catch (Exception ex) { Log($"[WARN] {ex.Message}"); logger?.Line($"[WARN] {ex.Message}"); }
     }
 
-    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool preferConnected = false)
+    // Chooses the device connected{Variant}AndroidTest runs on. connectedAndroidTest
+    // installs the debug-signed app + test APKs and UNINSTALLS the app when the run
+    // finishes, which destroys the app's data on that device. So a physical phone is
+    // used only when the user explicitly selected it in the device combo AND the run
+    // is interactive (allowPhysical) - and even then with a loud warning. Unattended
+    // pipeline runs always use an emulator so a phone left plugged in can never be
+    // wiped by a scheduled test run. A connected phone is never auto-picked.
+    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool allowPhysical = true)
     {
-        string? sel = await SelectConnectedPhysicalDevice(ct, selectedOnly: true);
-        if (sel != null) return sel;
-        if (preferConnected) { sel = await SelectConnectedPhysicalDevice(ct); if (sel != null) return sel; }
+        string? sel = await SelectedPhysicalDevice(ct);
+        if (sel != null)
+        {
+            if (allowPhysical)
+            {
+                Log($"[WARN] Instrument tests will run on physical device {sel}. " +
+                    "connectedAndroidTest uninstalls the app when it finishes, which WIPES " +
+                    "the app's data on that device. Select '(All connected)' to use an emulator instead.");
+                return sel;
+            }
+            Log($"Selected physical device {sel} is ignored for pipeline instrument tests; " +
+                "using an emulator so the phone's app data cannot be wiped by the test run.");
+        }
         string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
         if (serial == null) { Log("[ERROR] No emulator available."); return null; }
         _android.TargetDevice = serial; await RefreshDeviceList();
@@ -720,18 +740,16 @@ public partial class MainWindow : Window
         return serial;
     }
 
-    private async Task<string?> SelectConnectedPhysicalDevice(CancellationToken ct, bool selectedOnly = false)
+    // The device-combo selection, but only if it is a physical device that is
+    // currently connected and online. Returns null for "(All connected)".
+    private async Task<string?> SelectedPhysicalDevice(CancellationToken ct)
     {
-        if (selectedOnly && string.IsNullOrWhiteSpace(_android.TargetDevice)) return null;
+        if (string.IsNullOrWhiteSpace(_android.TargetDevice)) return null;
         var devices = await _avd.GetDevicesSilent(ct);
-        var physical = devices.Where(d => d.State == "device" && !d.IsEmulator).ToList();
-        if (physical.Count == 0) return null;
-        var pick = physical.FirstOrDefault(d =>
-            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
-        if (pick == null) { if (selectedOnly) return null; pick = physical[0]; }
-        _android.TargetDevice = pick.Serial; await RefreshDeviceList();
-        if (_deviceSerials.Contains(pick.Serial)) DeviceCombo.SelectedItem = pick.Serial;
-        return pick.Serial;
+        return devices.FirstOrDefault(d =>
+            d.State == "device" && !d.IsEmulator &&
+            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase))
+            ?.Serial;
     }
 
     private void ShowSummary(TestReport r)
@@ -817,11 +835,16 @@ public partial class MainWindow : Window
         };
         try
         {
+            var startedAt = DateTime.Now;
             bool ok = await _workflow.ExecuteAsync("Full Test Run", steps, _cts.Token);
-            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
-            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests", startedAt);
+            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests", startedAt);
             if (unit.Total > 0) { ShowSummary(unit); _testReports.SaveReport(unit, _android.ProjectPath, v, "(workflow)"); }
+            else Log("[WARN] Unit tests produced NO results this run - the unit test step " +
+                     "failed, was aborted, or executed zero tests. Check the step output above.");
             if (inst.Total > 0) { ShowSummary(inst); _testReports.SaveReport(inst, _android.ProjectPath, v, "(workflow)"); }
+            else Log("[WARN] Instrument tests produced NO results this run - the step " +
+                     "failed, was aborted, or executed zero tests. Check the step output above.");
             await RefreshDeviceList();
             Log(ok ? "\nAll steps passed!" : "\nSome steps failed.");
         }
@@ -978,23 +1001,31 @@ public partial class MainWindow : Window
             if (cfg.RunUnitTests)
             {
                 testsStarted = true; logger.Section("UNIT TESTS");
+                var unitStartedAt = DateTime.Now;
                 int c = await _android.RunUnitTests(ct);
-                unitRpt = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
+                unitRpt = _testReports.ParseResults(_android.ProjectPath, "UnitTests", unitStartedAt);
+                if (unitRpt.Total == 0)
+                    Log("[WARN] Unit tests produced NO results this run - check the Gradle output above.");
                 ShowSummary(unitRpt); _testReports.SaveReport(unitRpt, _android.ProjectPath, _android.SelectedVariant, "(FP)");
                 if ((unitRpt.Failed > 0 || c != 0) && !await HandleTestFailure("Unit Tests", unitRpt, cfg.FailureAction, logger))
                     return Fin(false, "Stopped after unit test failure");
             }
+            else Log("Unit tests: SKIPPED (disabled in the saved pipeline config - re-enable in the Full Pipeline dialog).");
             if (cfg.RunInstrumentTests)
             {
                 testsStarted = true; logger.Section("SELECT INSTRUMENT TARGET");
-                if (await PrepareInstrumentTestTarget(ct, true) == null) return Fin(false, "No instrument test target");
+                if (await PrepareInstrumentTestTarget(ct, allowPhysical: false) == null) return Fin(false, "No instrument test target");
                 logger.Section("INSTRUMENT TESTS");
+                var instrStartedAt = DateTime.Now;
                 int c = await _android.RunInstrumentTests(ct);
-                instrRpt = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+                instrRpt = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests", instrStartedAt);
+                if (instrRpt.Total == 0)
+                    Log("[WARN] Instrument tests produced NO results this run - check the Gradle output above.");
                 ShowSummary(instrRpt); _testReports.SaveReport(instrRpt, _android.ProjectPath, _android.SelectedVariant, "(FP)");
                 if ((instrRpt.Failed > 0 || c != 0) && !await HandleTestFailure("Instrument Tests", instrRpt, cfg.FailureAction, logger))
                     return Fin(false, "Stopped after instrument test failure");
             }
+            else Log("Instrument tests: SKIPPED (disabled in the saved pipeline config).");
             if (testsStarted) { await StopGradleResourcesAfterTesting("pipeline tests", logger); cleanupDone = true; SetStatus(statusText); }
 
             logger.Section("BUILD SIGNED APK");
