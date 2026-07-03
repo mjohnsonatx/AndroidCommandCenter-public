@@ -21,15 +21,27 @@ public class TestReportService
     }
 
     // ── Parse all JUnit XML result files for a test run ──
-    public TestReport ParseResults(string projectPath, string testType)
+    // Pass the run's start time as 'since' so leftover XML from an earlier run can
+    // never masquerade as this run's results (e.g. when a step failed before the
+    // build directory was cleaned) - a report must reflect what THIS run executed.
+    public TestReport ParseResults(string projectPath, string testType, DateTime? since = null)
     {
         var report = new TestReport { TestType = testType };
         var files = FindResultFiles(projectPath, testType);
 
+        if (since != null)
+        {
+            var stale = files.Count;
+            files = files.Where(f => File.GetLastWriteTime(f) >= since.Value).ToList();
+            stale -= files.Count;
+            if (stale > 0)
+                LogMessage?.Invoke($"Ignoring {stale} stale {testType} result file(s) from a previous run.");
+        }
+
         if (files.Count == 0)
         {
-            LogMessage?.Invoke("No test result XML files found " +
-                               "(tests may not have run, or were UP-TO-DATE).");
+            LogMessage?.Invoke($"No fresh {testType} result XML files found " +
+                               "(tests may not have run, failed before executing, or were UP-TO-DATE).");
             return report;
         }
 

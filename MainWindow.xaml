@@ -149,6 +149,19 @@
                                             ToolTip="Clean → Unit → Instrument on LOCAL project"/>
                                 </StackPanel>
                             </Expander>
+                            <Expander Header="Test Devices" Style="{StaticResource NavExpander}" IsExpanded="False">
+                                <StackPanel>
+                                    <TextBlock Text="Instrument tests wipe app data on the device they run on. When this list has entries, only these serials may be used (emulators always allowed). Empty = any device."
+                                               Foreground="#a6adc8" FontSize="11" TextWrapping="Wrap" Margin="4,0,4,6"/>
+                                    <ListBox x:Name="AuthorizedDevicesList" MinHeight="48" MaxHeight="96" FontSize="12" Margin="4,0,4,4"
+                                             Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"/>
+                                    <TextBox x:Name="AuthorizedSerialBox" Style="{StaticResource DarkTextBox}" Margin="4,0,4,4"
+                                             ToolTip="Serial to authorize. Leave empty to add the device selected in the Target combo."/>
+                                    <Button Content="Authorize Device" Style="{StaticResource NavButton}" Click="AuthorizeDevice_Click"
+                                            ToolTip="Adds the serial above, or the Target combo selection when the box is empty"/>
+                                    <Button Content="Remove Selected" Style="{StaticResource NavButton}" Click="RemoveAuthorizedDevice_Click"/>
+                                </StackPanel>
+                            </Expander>
                             <Expander Header="Environment" Style="{StaticResource NavExpander}">
                                 <StackPanel>
                                     <Button Content="List Devices" Style="{StaticResource NavButton}" Click="Devices_Click"/>

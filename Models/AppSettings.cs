@@ -13,6 +13,12 @@ public class AppSettings
     public Dictionary<string, List<string>> ProjectVariants { get; set; } = new();
     // Per-project: projectPath → last selected variant
     public Dictionary<string, string> SelectedVariants { get; set; } = new();
+    // Per-project: projectPath → device serials authorized to run instrument tests.
+    // connectedAndroidTest ends by uninstalling the app (wiping its data on the
+    // device), so this list is the guard rail that keeps test runs off phones that
+    // hold data worth keeping. Empty/missing list = no restriction. Emulators are
+    // always allowed - their data is disposable.
+    public Dictionary<string, List<string>> AuthorizedTestDevices { get; set; } = new();
 
     private static string FilePath =>
         Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "acc_settings.json");
@@ -60,5 +66,28 @@ public class AppSettings
     {
         SelectedVariants[project] = variant;
         Save();
+    }
+
+    // ── Authorized test device helpers ───────────
+
+    public List<string> GetAuthorizedTestDevices(string project) =>
+        AuthorizedTestDevices.TryGetValue(project, out var v) ? v : [];
+
+    public bool AddAuthorizedTestDevice(string project, string serial)
+    {
+        if (!AuthorizedTestDevices.TryGetValue(project, out var list))
+            AuthorizedTestDevices[project] = list = [];
+        if (list.Contains(serial, StringComparer.OrdinalIgnoreCase)) return false;
+        list.Add(serial);
+        Save();
+        return true;
+    }
+
+    public bool RemoveAuthorizedTestDevice(string project, string serial)
+    {
+        if (!AuthorizedTestDevices.TryGetValue(project, out var list)) return false;
+        int removed = list.RemoveAll(s => string.Equals(s, serial, StringComparison.OrdinalIgnoreCase));
+        if (removed > 0) Save();
+        return removed > 0;
     }
 }

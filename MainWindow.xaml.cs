@@ -41,6 +41,7 @@ public partial class MainWindow : Window
     private readonly ObservableCollection<string> _variants = new();
     private readonly ObservableCollection<string> _avds = new();
     private readonly ObservableCollection<string> _deviceSerials = new();
+    private readonly ObservableCollection<string> _authorizedDevices = new();
     private readonly ObservableCollection<string> _githubBranches = new();
     private readonly ObservableCollection<GitHubIssueModel> _githubIssues = new();
     private readonly ObservableCollection<GitHubCommentDto> _issueComments = new();
@@ -85,6 +86,7 @@ public partial class MainWindow : Window
         VariantCombo.ItemsSource = _variants;
         AvdCombo.ItemsSource = _avds;
         DeviceCombo.ItemsSource = _deviceSerials;
+        AuthorizedDevicesList.ItemsSource = _authorizedDevices;
         MainBranchCombo.ItemsSource = _githubBranches;
         IssuesGrid.ItemsSource = _githubIssues;
         IssueCommentsPanel.ItemsSource = _issueComments;
@@ -187,6 +189,42 @@ public partial class MainWindow : Window
             _android.TargetDevice = sel == "(All connected)" ? null : sel;
     }
 
+    private void RefreshAuthorizedDevices()
+    {
+        _authorizedDevices.Clear();
+        if (string.IsNullOrEmpty(_android.ProjectPath)) return;
+        foreach (var serial in _settings.GetAuthorizedTestDevices(_android.ProjectPath))
+            _authorizedDevices.Add(serial);
+    }
+
+    private void AuthorizeDevice_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        string serial = AuthorizedSerialBox.Text.Trim();
+        if (serial.Length == 0 && DeviceCombo.SelectedItem is string sel && sel != "(All connected)")
+            serial = sel;
+        if (serial.Length == 0)
+        { Log("[!] Enter a serial or select a specific device in the Target combo first."); return; }
+
+        if (_settings.AddAuthorizedTestDevice(_android.ProjectPath, serial))
+            Log($"Authorized test device for this project: {serial}");
+        else
+            Log($"{serial} is already on this project's authorized test device list.");
+        AuthorizedSerialBox.Text = "";
+        RefreshAuthorizedDevices();
+    }
+
+    private void RemoveAuthorizedDevice_Click(object s, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        if (AuthorizedDevicesList.SelectedItem is not string serial)
+        { Log("[!] Select a serial in the authorized list first."); return; }
+
+        if (_settings.RemoveAuthorizedTestDevice(_android.ProjectPath, serial))
+            Log($"Removed authorized test device: {serial}");
+        RefreshAuthorizedDevices();
+    }
+
     #endregion
 
     #region Project Management + Profile Loading
@@ -216,6 +254,7 @@ public partial class MainWindow : Window
         _settings.LastSelectedProject = sel; _settings.Save();
         Log($"\nActive project: {sel}");
         LoadVariants(sel);
+        RefreshAuthorizedDevices();
         ActivateProfileForProject(sel);
     }
 
@@ -680,9 +719,12 @@ public partial class MainWindow : Window
             if (ensureEmulator && await PrepareInstrumentTestTarget(_cts.Token) == null) return;
             Log($"\n===== {testType} ({_android.SelectedVariant}) =====");
             started = true;
+            var startedAt = DateTime.Now;
             int code = await testOp(_cts.Token);
             Log($"===== {testType} exit {code} =====");
-            var rpt = _testReports.ParseResults(_android.ProjectPath, testType);
+            var rpt = _testReports.ParseResults(_android.ProjectPath, testType, startedAt);
+            if (rpt.Total == 0)
+                Log($"[WARN] {testType} produced NO results this run - check the Gradle output above.");
             ShowSummary(rpt);
             _testReports.SaveReport(rpt, _android.ProjectPath, _android.SelectedVariant, buf.ToString());
         }
@@ -708,30 +750,72 @@ public partial class MainWindow : Window
         catch (Exception ex) { Log($"[WARN] {ex.Message}"); logger?.Line($"[WARN] {ex.Message}"); }
     }
 
-    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool preferConnected = false)
+    // Chooses the device connected{Variant}AndroidTest runs on. Physical devices are
+    // preferred - the 500+ test instrument suite is too heavy for emulators. Order:
+    // the device explicitly selected in the combo (physical or emulator) wins, then
+    // any connected physical device, then an emulator as a last resort. NOTE that
+    // connectedAndroidTest ends by UNINSTALLING the app under test, which deletes
+    // ALL of its data on the target device. That is accepted behavior for test
+    // devices here, but it is guarded two ways: when the project's authorized test
+    // device list is non-empty, only serials on it may be targeted (emulators are
+    // exempt - their data is disposable), and whenever the target is a physical
+    // device, an unmissable banner is written to the run log first.
+    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct)
     {
-        string? sel = await SelectConnectedPhysicalDevice(ct, selectedOnly: true);
-        if (sel != null) return sel;
-        if (preferConnected) { sel = await SelectConnectedPhysicalDevice(ct); if (sel != null) return sel; }
+        var devices = await _avd.GetDevicesSilent(ct);
+        var authorized = _settings.GetAuthorizedTestDevices(_android.ProjectPath);
+        bool Authorized(DeviceInfo d) => authorized.Count == 0 ||
+            authorized.Contains(d.Serial, StringComparer.OrdinalIgnoreCase);
+
+        var selected = devices.FirstOrDefault(d => d.State == "device" &&
+            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
+
+        // An explicitly selected emulator is respected as an override; otherwise
+        // take the selected phone, or auto-pick the first authorized connected phone.
+        if (selected?.IsEmulator != true)
+        {
+            if (selected != null && !Authorized(selected))
+            {
+                Log($"[WARN] Selected device {selected.Serial} is NOT on this project's authorized " +
+                    "test device list - it will not be used for instrument tests. " +
+                    "Authorize it under Test Devices to allow it.");
+                selected = null;
+            }
+            var target = selected
+                ?? devices.FirstOrDefault(d => d.State == "device" && !d.IsEmulator && Authorized(d));
+            if (target != null)
+            {
+                _android.TargetDevice = target.Serial; await RefreshDeviceList();
+                if (_deviceSerials.Contains(target.Serial)) DeviceCombo.SelectedItem = target.Serial;
+                AnnounceInstrumentWipe(target.Serial);
+                return target.Serial;
+            }
+            Log(devices.Any(d => d.State == "device" && !d.IsEmulator)
+                ? "Connected phone(s) present but none are on this project's authorized test " +
+                  "device list; falling back to an emulator for instrument tests."
+                : "No physical device connected; falling back to an emulator for instrument tests.");
+        }
+
         string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
-        if (serial == null) { Log("[ERROR] No emulator available."); return null; }
+        if (serial == null) { Log("[ERROR] No device or emulator available."); return null; }
         _android.TargetDevice = serial; await RefreshDeviceList();
         if (_deviceSerials.Contains(serial)) DeviceCombo.SelectedItem = serial;
         return serial;
     }
 
-    private async Task<string?> SelectConnectedPhysicalDevice(CancellationToken ct, bool selectedOnly = false)
+    // Written to the UI log and the pipeline log (Log forwards to _pipelineLogger)
+    // right before instrument tests start on a physical device, so the post-run
+    // uninstall - and the data wipe that comes with it - is never a surprise.
+    private void AnnounceInstrumentWipe(string serial)
     {
-        if (selectedOnly && string.IsNullOrWhiteSpace(_android.TargetDevice)) return null;
-        var devices = await _avd.GetDevicesSilent(ct);
-        var physical = devices.Where(d => d.State == "device" && !d.IsEmulator).ToList();
-        if (physical.Count == 0) return null;
-        var pick = physical.FirstOrDefault(d =>
-            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
-        if (pick == null) { if (selectedOnly) return null; pick = physical[0]; }
-        _android.TargetDevice = pick.Serial; await RefreshDeviceList();
-        if (_deviceSerials.Contains(pick.Serial)) DeviceCombo.SelectedItem = pick.Serial;
-        return pick.Serial;
+        Log("");
+        Log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        Log($"!!  INSTRUMENT TESTS -> PHYSICAL DEVICE {serial}");
+        Log("!!  connectedAndroidTest UNINSTALLS the app when the run ends.");
+        Log("!!  ALL app data on this device will be DELETED");
+        Log("!!  (saved workouts, API keys, chat conversations, settings).");
+        Log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        Log("");
     }
 
     private void ShowSummary(TestReport r)
@@ -817,11 +901,16 @@ public partial class MainWindow : Window
         };
         try
         {
+            var startedAt = DateTime.Now;
             bool ok = await _workflow.ExecuteAsync("Full Test Run", steps, _cts.Token);
-            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
-            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+            var unit = _testReports.ParseResults(_android.ProjectPath, "UnitTests", startedAt);
+            var inst = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests", startedAt);
             if (unit.Total > 0) { ShowSummary(unit); _testReports.SaveReport(unit, _android.ProjectPath, v, "(workflow)"); }
+            else Log("[WARN] Unit tests produced NO results this run - the unit test step " +
+                     "failed, was aborted, or executed zero tests. Check the step output above.");
             if (inst.Total > 0) { ShowSummary(inst); _testReports.SaveReport(inst, _android.ProjectPath, v, "(workflow)"); }
+            else Log("[WARN] Instrument tests produced NO results this run - the step " +
+                     "failed, was aborted, or executed zero tests. Check the step output above.");
             await RefreshDeviceList();
             Log(ok ? "\nAll steps passed!" : "\nSome steps failed.");
         }
@@ -978,23 +1067,31 @@ public partial class MainWindow : Window
             if (cfg.RunUnitTests)
             {
                 testsStarted = true; logger.Section("UNIT TESTS");
+                var unitStartedAt = DateTime.Now;
                 int c = await _android.RunUnitTests(ct);
-                unitRpt = _testReports.ParseResults(_android.ProjectPath, "UnitTests");
+                unitRpt = _testReports.ParseResults(_android.ProjectPath, "UnitTests", unitStartedAt);
+                if (unitRpt.Total == 0)
+                    Log("[WARN] Unit tests produced NO results this run - check the Gradle output above.");
                 ShowSummary(unitRpt); _testReports.SaveReport(unitRpt, _android.ProjectPath, _android.SelectedVariant, "(FP)");
                 if ((unitRpt.Failed > 0 || c != 0) && !await HandleTestFailure("Unit Tests", unitRpt, cfg.FailureAction, logger))
                     return Fin(false, "Stopped after unit test failure");
             }
+            else Log("Unit tests: SKIPPED (disabled in the saved pipeline config - re-enable in the Full Pipeline dialog).");
             if (cfg.RunInstrumentTests)
             {
                 testsStarted = true; logger.Section("SELECT INSTRUMENT TARGET");
-                if (await PrepareInstrumentTestTarget(ct, true) == null) return Fin(false, "No instrument test target");
+                if (await PrepareInstrumentTestTarget(ct) == null) return Fin(false, "No instrument test target");
                 logger.Section("INSTRUMENT TESTS");
+                var instrStartedAt = DateTime.Now;
                 int c = await _android.RunInstrumentTests(ct);
-                instrRpt = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests");
+                instrRpt = _testReports.ParseResults(_android.ProjectPath, "InstrumentTests", instrStartedAt);
+                if (instrRpt.Total == 0)
+                    Log("[WARN] Instrument tests produced NO results this run - check the Gradle output above.");
                 ShowSummary(instrRpt); _testReports.SaveReport(instrRpt, _android.ProjectPath, _android.SelectedVariant, "(FP)");
                 if ((instrRpt.Failed > 0 || c != 0) && !await HandleTestFailure("Instrument Tests", instrRpt, cfg.FailureAction, logger))
                     return Fin(false, "Stopped after instrument test failure");
             }
+            else Log("Instrument tests: SKIPPED (disabled in the saved pipeline config).");
             if (testsStarted) { await StopGradleResourcesAfterTesting("pipeline tests", logger); cleanupDone = true; SetStatus(statusText); }
 
             logger.Section("BUILD SIGNED APK");
