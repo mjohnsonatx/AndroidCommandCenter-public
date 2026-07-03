@@ -711,45 +711,56 @@ public partial class MainWindow : Window
         catch (Exception ex) { Log($"[WARN] {ex.Message}"); logger?.Line($"[WARN] {ex.Message}"); }
     }
 
-    // Chooses the device connected{Variant}AndroidTest runs on. connectedAndroidTest
-    // installs the debug-signed app + test APKs and UNINSTALLS the app when the run
-    // finishes, which destroys the app's data on that device. So a physical phone is
-    // used only when the user explicitly selected it in the device combo AND the run
-    // is interactive (allowPhysical) - and even then with a loud warning. Unattended
-    // pipeline runs always use an emulator so a phone left plugged in can never be
-    // wiped by a scheduled test run. A connected phone is never auto-picked.
-    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct, bool allowPhysical = true)
+    // Chooses the device connected{Variant}AndroidTest runs on. Physical devices are
+    // preferred - the 500+ test instrument suite is too heavy for emulators. Order:
+    // the device explicitly selected in the combo (physical or emulator) wins, then
+    // any connected physical device, then an emulator as a last resort. NOTE that
+    // connectedAndroidTest ends by UNINSTALLING the app under test, which deletes
+    // ALL of its data on the target device. That is accepted behavior for test
+    // devices here, but it must never happen silently: whenever the target is a
+    // physical device, an unmissable banner is written to the run log first.
+    private async Task<string?> PrepareInstrumentTestTarget(CancellationToken ct)
     {
-        string? sel = await SelectedPhysicalDevice(ct);
-        if (sel != null)
+        var devices = await _avd.GetDevicesSilent(ct);
+        var selected = devices.FirstOrDefault(d => d.State == "device" &&
+            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase));
+
+        // An explicitly selected emulator is respected as an override; otherwise
+        // take the selected phone, or auto-pick the first connected phone.
+        if (selected?.IsEmulator != true)
         {
-            if (allowPhysical)
+            var target = selected
+                ?? devices.FirstOrDefault(d => d.State == "device" && !d.IsEmulator);
+            if (target != null)
             {
-                Log($"[WARN] Instrument tests will run on physical device {sel}. " +
-                    "connectedAndroidTest uninstalls the app when it finishes, which WIPES " +
-                    "the app's data on that device. Select '(All connected)' to use an emulator instead.");
-                return sel;
+                _android.TargetDevice = target.Serial; await RefreshDeviceList();
+                if (_deviceSerials.Contains(target.Serial)) DeviceCombo.SelectedItem = target.Serial;
+                AnnounceInstrumentWipe(target.Serial);
+                return target.Serial;
             }
-            Log($"Selected physical device {sel} is ignored for pipeline instrument tests; " +
-                "using an emulator so the phone's app data cannot be wiped by the test run.");
+            Log("No physical device connected; falling back to an emulator for instrument tests.");
         }
+
         string? serial = await _avd.EnsureEmulatorReadyForTests(_settings.PreferredAvd, ct);
-        if (serial == null) { Log("[ERROR] No emulator available."); return null; }
+        if (serial == null) { Log("[ERROR] No device or emulator available."); return null; }
         _android.TargetDevice = serial; await RefreshDeviceList();
         if (_deviceSerials.Contains(serial)) DeviceCombo.SelectedItem = serial;
         return serial;
     }
 
-    // The device-combo selection, but only if it is a physical device that is
-    // currently connected and online. Returns null for "(All connected)".
-    private async Task<string?> SelectedPhysicalDevice(CancellationToken ct)
+    // Written to the UI log and the pipeline log (Log forwards to _pipelineLogger)
+    // right before instrument tests start on a physical device, so the post-run
+    // uninstall - and the data wipe that comes with it - is never a surprise.
+    private void AnnounceInstrumentWipe(string serial)
     {
-        if (string.IsNullOrWhiteSpace(_android.TargetDevice)) return null;
-        var devices = await _avd.GetDevicesSilent(ct);
-        return devices.FirstOrDefault(d =>
-            d.State == "device" && !d.IsEmulator &&
-            string.Equals(d.Serial, _android.TargetDevice, StringComparison.OrdinalIgnoreCase))
-            ?.Serial;
+        Log("");
+        Log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        Log($"!!  INSTRUMENT TESTS -> PHYSICAL DEVICE {serial}");
+        Log("!!  connectedAndroidTest UNINSTALLS the app when the run ends.");
+        Log("!!  ALL app data on this device will be DELETED");
+        Log("!!  (saved workouts, API keys, chat conversations, settings).");
+        Log("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
+        Log("");
     }
 
     private void ShowSummary(TestReport r)
@@ -1014,7 +1025,7 @@ public partial class MainWindow : Window
             if (cfg.RunInstrumentTests)
             {
                 testsStarted = true; logger.Section("SELECT INSTRUMENT TARGET");
-                if (await PrepareInstrumentTestTarget(ct, allowPhysical: false) == null) return Fin(false, "No instrument test target");
+                if (await PrepareInstrumentTestTarget(ct) == null) return Fin(false, "No instrument test target");
                 logger.Section("INSTRUMENT TESTS");
                 var instrStartedAt = DateTime.Now;
                 int c = await _android.RunInstrumentTests(ct);
