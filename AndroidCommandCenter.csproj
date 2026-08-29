@@ -1,11 +1,27 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net9.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+        <InvariantGlobalization>false</InvariantGlobalization>
+    </PropertyGroup>
 
-  <PropertyGroup>
-    <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <UseWPF>true</UseWPF>
-  </PropertyGroup>
+    <ItemGroup>
+        <PackageReference Include="Avalonia" Version="11.2.3" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.2.3" />
+        <PackageReference Include="Avalonia.Themes.Fluent" Version="11.2.3" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.2.3" />
+        <PackageReference Include="Avalonia.Controls.DataGrid" Version="11.2.3" />
+        <PackageReference Include="Avalonia.Diagnostics" Version="11.2.3"
+                          Condition="'$(Configuration)'=='Debug'" />
 
+        <!-- CI/CD + Firestore -->
+        <PackageReference Include="Google.Cloud.Firestore" Version="3.9.0" />
+        <PackageReference Include="YamlDotNet" Version="16.2.1" />
+        <PackageReference Include="MailKit" Version="4.8.0" />
+    </ItemGroup>
 </Project>

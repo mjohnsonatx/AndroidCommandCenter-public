@@ -1,9 +1,10 @@
-﻿<Application x:Class="AndroidCommandCenter.App"
-             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Application xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:local="clr-namespace:AndroidCommandCenter"
-             StartupUri="MainWindow.xaml">
-    <Application.Resources>
-         
-    </Application.Resources>
+             x:Class="AndroidCommandCenter.App"
+             RequestedThemeVariant="Dark">
+    <Application.Styles>
+        <FluentTheme />
+        <StyleInclude Source="avares://Avalonia.Controls.DataGrid/Themes/Fluent.xaml" />
+        <StyleInclude Source="avares://AndroidCommandCenter/Themes/Dark.axaml" />
+    </Application.Styles>
 </Application>

@@ -1,4 +1,7 @@
-﻿using System.Diagnostics;
+﻿using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
 using System.Runtime.InteropServices;
 
 namespace AndroidCommandCenter.Services;
@@ -12,21 +15,21 @@ public class SystemStats
     public int JavaProcessCount { get; init; }
 }
 
-public class DashboardService : IDisposable
+public sealed class DashboardService : IDisposable
 {
     private readonly System.Timers.Timer _timer;
-    private long _prevIdle, _prevKernel, _prevUser;
+    private ulong _prevIdle, _prevTotal;
 
     public event Action<SystemStats>? StatsUpdated;
+    /// <summary>Raised once if sampling fails, so the UI can grey the gauges.</summary>
+    public event Action<string>? Degraded;
+    private bool _reportedDegraded;
 
     public DashboardService(double intervalMs = 2000)
     {
-        _timer = new System.Timers.Timer(intervalMs);
+        _timer = new System.Timers.Timer(intervalMs) { AutoReset = true };
         _timer.Elapsed += (_, _) => Poll();
-        _timer.AutoReset = true;
-
-        // Prime the CPU counters (first diff is always zero)
-        GetSystemTimes(out _prevIdle, out _prevKernel, out _prevUser);
+        ReadCpu(out _prevIdle, out _prevTotal);   // prime
     }
 
     public void Start() => _timer.Start();
@@ -36,79 +39,101 @@ public class DashboardService : IDisposable
     {
         try
         {
-            var mem = GetMemoryInfo();
+            var (total, used, pct) = ReadMemory();
             StatsUpdated?.Invoke(new SystemStats
             {
-                CpuPercent = GetCpuPercent(),
-                MemoryPercent = mem.Percent,
-                MemoryTotalMb = mem.TotalMb,
-                MemoryUsedMb = mem.UsedMb,
-                JavaProcessCount = GetJavaCount()
+                CpuPercent = CpuPercent(),
+                MemoryTotalMb = total,
+                MemoryUsedMb = used,
+                MemoryPercent = pct,
+                JavaProcessCount = JavaCount()
             });
         }
-        catch { /* dashboard is best-effort */ }
+        catch (Exception ex)
+        {
+            if (!_reportedDegraded)
+            {
+                _reportedDegraded = true;
+                Degraded?.Invoke($"System monitor unavailable: {ex.Message}");
+            }
+        }
     }
 
-    // ── CPU via GetSystemTimes delta ─────────────
-    private float GetCpuPercent()
+    private float CpuPercent()
     {
-        if (!GetSystemTimes(out long idle, out long kernel, out long user))
-            return 0;
-
-        long di = idle - _prevIdle;
-        long dk = kernel - _prevKernel;
-        long du = user - _prevUser;
-        _prevIdle = idle; _prevKernel = kernel; _prevUser = user;
-
-        long total = dk + du;          // kernel includes idle
-        return total == 0 ? 0 : Math.Clamp((1f - (float)di / total) * 100f, 0, 100);
+        if (!ReadCpu(out ulong idle, out ulong total)) return 0;
+        ulong dIdle = idle - _prevIdle, dTotal = total - _prevTotal;
+        _prevIdle = idle; _prevTotal = total;
+        if (dTotal == 0) return 0;
+        return Math.Clamp((1f - (float)dIdle / dTotal) * 100f, 0, 100);
     }
 
-    // ── Memory via GlobalMemoryStatusEx ──────────
-    private static (long TotalMb, long UsedMb, float Percent) GetMemoryInfo()
+    /// <summary>First line of /proc/stat: cpu user nice system idle iowait ...</summary>
+    private static bool ReadCpu(out ulong idle, out ulong total)
     {
-        var ms = new MEMORYSTATUSEX { dwLength = (uint)Marshal.SizeOf<MEMORYSTATUSEX>() };
-        if (!GlobalMemoryStatusEx(ref ms)) return (0, 0, 0);
-
-        long total = (long)(ms.ullTotalPhys / 1024 / 1024);
-        long used = total - (long)(ms.ullAvailPhys / 1024 / 1024);
-        return (total, used, ms.dwMemoryLoad);
+        idle = total = 0;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return false;
+        try
+        {
+            var line = File.ReadLines("/proc/stat").FirstOrDefault(l => l.StartsWith("cpu "));
+            if (line is null) return false;
+            var f = line.Split(' ', StringSplitOptions.RemoveEmptyEntries).Skip(1)
+                        .Select(s => ulong.TryParse(s, out var v) ? v : 0UL).ToArray();
+            if (f.Length < 5) return false;
+            idle = f[3] + f[4];                       // idle + iowait
+            total = f.Aggregate(0UL, (a, b) => a + b);
+            return true;
+        }
+        catch { return false; }
     }
 
-    // ── Java / Gradle daemon count ───────────────
-    private static int GetJavaCount()
+    /// <summary>
+    /// MemAvailable (not MemFree) is the kernel's own estimate of what a new
+    /// workload can claim; MemFree excludes reclaimable page cache and would
+    /// report ~95% used on any warm machine.
+    /// </summary>
+    private static (long TotalMb, long UsedMb, float Percent) ReadMemory()
     {
-        try { return Process.GetProcessesByName("java").Length; }
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)) return (0, 0, 0);
+        long total = 0, avail = 0;
+        foreach (var line in File.ReadLines("/proc/meminfo"))
+        {
+            if (line.StartsWith("MemTotal:")) total = ParseKb(line);
+            else if (line.StartsWith("MemAvailable:")) avail = ParseKb(line);
+            if (total > 0 && avail > 0) break;
+        }
+        if (total == 0) return (0, 0, 0);
+        long totalMb = total / 1024, usedMb = (total - avail) / 1024;
+        return (totalMb, usedMb, totalMb == 0 ? 0 : usedMb * 100f / totalMb);
+
+        static long ParseKb(string l)
+        {
+            var parts = l.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            return parts.Length >= 2 && long.TryParse(parts[1], out var v) ? v : 0;
+        }
+    }
+
+    /// <summary>
+    /// Gradle daemons. Process name on Linux is "java"; also catch the
+    /// GradleDaemon process some JDKs name differently.
+    /// </summary>
+    private static int JavaCount()
+    {
+        try
+        {
+            return Process.GetProcesses().Count(p =>
+            {
+                try
+                {
+                    return p.ProcessName.Equals("java", StringComparison.OrdinalIgnoreCase)
+                        || p.ProcessName.Contains("Gradle", StringComparison.OrdinalIgnoreCase);
+                }
+                catch { return false; }
+                finally { p.Dispose(); }
+            });
+        }
         catch { return 0; }
     }
 
-    public void Dispose()
-    {
-        _timer.Stop();
-        _timer.Dispose();
-    }
-
-    // ── P/Invoke ─────────────────────────────────
-    [DllImport("kernel32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemTimes(
-        out long idleTime, out long kernelTime, out long userTime);
-
-    [StructLayout(LayoutKind.Sequential)]
-    private struct MEMORYSTATUSEX
-    {
-        public uint dwLength;
-        public uint dwMemoryLoad;
-        public ulong ullTotalPhys;
-        public ulong ullAvailPhys;
-        public ulong ullTotalPageFile;
-        public ulong ullAvailPageFile;
-        public ulong ullTotalVirtual;
-        public ulong ullAvailVirtual;
-        public ulong ullAvailExtendedVirtual;
-    }
-
-    [DllImport("kernel32.dll", SetLastError = true)]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GlobalMemoryStatusEx(ref MEMORYSTATUSEX lpBuffer);
+    public void Dispose() { _timer.Stop(); _timer.Dispose(); }
 }
