@@ -1,0 +1,36 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AndroidCommandCenter.UI.MessageDialog"
+        Width="520" SizeToContent="Height" MinHeight="160" MaxHeight="640"
+        CanResize="False" WindowStartupLocation="CenterOwner"
+        ShowInTaskbar="False" Title="Android Command Center">
+    <DockPanel Margin="20">
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
+                    HorizontalAlignment="Right" Margin="0,16,0,0" Spacing="4">
+            <Button x:Name="SecondaryBtn" Classes="cmd" Click="Secondary_Click" Padding="18,6"/>
+            <Button x:Name="PrimaryBtn"   Classes="cmd" Click="Primary_Click"   Padding="18,6"/>
+        </StackPanel>
+        <Grid ColumnDefinitions="Auto,*">
+            <TextBlock x:Name="IconText" Grid.Column="0" FontSize="28" FontWeight="Bold"
+                       Margin="0,0,16,0" VerticalAlignment="Top"/>
+            <StackPanel Grid.Column="1" Spacing="8">
+                <TextBlock x:Name="TitleText" FontSize="16" FontWeight="Bold" TextWrapping="Wrap"/>
+                <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#a6adc8"/>
+                <ItemsControl x:Name="BulletList" IsVisible="False" Margin="0,4,0,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <TextBlock Text="{Binding StringFormat='•  {0}'}" TextWrapping="Wrap"
+                                       Foreground="#f38ba8" Margin="0,2"/>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Expander x:Name="DetailsExpander" Header="Details" IsVisible="False" Margin="0,6,0,0">
+                    <TextBox x:Name="DetailsBox" Classes="log" MaxHeight="260" FontSize="11"
+                             ScrollViewer.VerticalScrollBarVisibility="Auto"/>
+                </Expander>
+                <CheckBox x:Name="ConfirmCheck" IsVisible="False" Foreground="#f9e2af"
+                          IsCheckedChanged="Confirm_Changed"/>
+            </StackPanel>
+        </Grid>
+    </DockPanel>
+</Window>

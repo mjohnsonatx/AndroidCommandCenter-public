@@ -1,0 +1,42 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AndroidCommandCenter.FirebaseConfigWindow"
+        Title="Firebase Configuration" Width="580" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock x:Name="SummaryText" Classes="field-error" VerticalAlignment="Center"
+                           FontSize="12" IsVisible="False"/>
+                <Button Grid.Column="1" x:Name="SaveBtn" Classes="cmd primary" Content="Save" Click="Save_Click"/>
+                <Button Grid.Column="2" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="20,6"/>
+            </Grid>
+        </Border>
+        <StackPanel Margin="16,12">
+            <TextBlock Classes="section" Text="FIREBASE CONFIGURATION" Foreground="#a6e3a1"/>
+
+            <TextBlock Classes="label" Text="Firebase App ID (e.g. 1:123456789:android:abc123):"/>
+            <TextBox x:Name="AppIdBox" TextChanged="Field_Changed" Watermark="1:123456789:android:abc123"/>
+            <TextBlock x:Name="AppIdErr" Classes="field-error" IsVisible="False"/>
+
+            <TextBlock Classes="label" Text="Service Account JSON (credentials):"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="JsonBox" TextChanged="Field_Changed"/>
+                <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseJson_Click"/>
+            </Grid>
+            <TextBlock x:Name="JsonErr" Classes="field-error" IsVisible="False"/>
+            <TextBlock x:Name="JsonInfo" Classes="hint" Foreground="#a6e3a1" Margin="2,2,0,0" IsVisible="False"/>
+
+            <TextBlock Classes="label" Text="Firebase CLI command/path:"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="CliBox" TextChanged="Field_Changed" Watermark="firebase"/>
+                <Button Grid.Column="1" x:Name="TestCliBtn" Classes="cmd" Content="Test CLI" Click="TestCli_Click"/>
+            </Grid>
+            <TextBlock x:Name="CliErr" Classes="field-error" IsVisible="False"/>
+            <TextBlock x:Name="CliInfo" Classes="hint" Margin="2,2,0,0"/>
+
+            <TextBlock Classes="hint" Margin="0,12,0,0"
+                       Text="Must be a Google service-account JSON with the Firebase App Distribution Admin role — NOT google-services.json. The file is validated when you select it."/>
+        </StackPanel>
+    </DockPanel>
+</Window>

@@ -1,0 +1,44 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="using:AndroidCommandCenter.UI"
+             x:Class="AndroidCommandCenter.UI.ToastHost"
+             x:DataType="ui:Toaster"
+             HorizontalAlignment="Right" VerticalAlignment="Top"
+             Margin="0,12,16,0" IsHitTestVisible="True">
+    <ItemsControl ItemsSource="{Binding Items}">
+        <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="ui:ToastItem">
+                <Border Classes="toast">
+                    <Grid ColumnDefinitions="Auto,*">
+                        <Border Grid.Column="0" Classes="toast-accent" Background="{Binding Accent}"/>
+                        <StackPanel Grid.Column="1" Margin="10,8,8,8">
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto">
+                                <TextBlock Grid.Column="0" Text="{Binding Icon}" Foreground="{Binding Accent}"
+                                           FontSize="14" FontWeight="Bold" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="SemiBold"
+                                           TextWrapping="Wrap" VerticalAlignment="Center"/>
+                                <TextBlock Grid.Column="2" Text="{Binding Time}" Classes="hint"
+                                           VerticalAlignment="Center" Margin="8,0"/>
+                                <Button Grid.Column="3" Classes="toast-close" Content="✕"
+                                        Click="Close_Click" Tag="{Binding}"/>
+                            </Grid>
+                            <TextBlock Text="{Binding Message}" TextWrapping="Wrap" Margin="22,4,0,0"
+                                       Foreground="#a6adc8" FontSize="12"
+                                       IsVisible="{Binding Message, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            <StackPanel Orientation="Horizontal" Margin="22,6,0,0" Spacing="14">
+                                <Button Classes="toast-link" Content="{Binding ToggleLabel}"
+                                        IsVisible="{Binding HasDetails}" Click="Toggle_Click" Tag="{Binding}"/>
+                                <Button Classes="toast-link" Content="{Binding ActionLabel}"
+                                        IsVisible="{Binding HasAction}" Click="Action_Click" Tag="{Binding}"/>
+                            </StackPanel>
+                            <TextBox Classes="log" Text="{Binding Details}" IsVisible="{Binding IsExpanded}"
+                                     MaxHeight="180" Margin="22,6,0,0" FontSize="11"
+                                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>

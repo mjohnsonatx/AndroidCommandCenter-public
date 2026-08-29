@@ -1,0 +1,38 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AndroidCommandCenter.DeployFirebaseWindow"
+        Title="Deploy to Firebase" Width="580" SizeToContent="Height"
+        CanResize="False" WindowStartupLocation="CenterOwner">
+    <DockPanel>
+        <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+            <Grid ColumnDefinitions="*,Auto,Auto">
+                <TextBlock x:Name="SummaryText" Classes="field-error" VerticalAlignment="Center" IsVisible="False"/>
+                <Button Grid.Column="1" x:Name="DeployBtn" Classes="cmd success" Content="Deploy" Click="Deploy_Click"/>
+                <Button Grid.Column="2" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="20,6"/>
+            </Grid>
+        </Border>
+        <StackPanel Margin="16,12">
+            <TextBlock Classes="section" Text="DEPLOY TO FIREBASE" Foreground="#a6e3a1"/>
+
+            <TextBlock Classes="label" Text="APK file:"/>
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBox x:Name="ApkBox" TextChanged="Field_Changed"/>
+                <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseApk_Click"/>
+            </Grid>
+            <TextBlock x:Name="ApkErr" Classes="field-error" IsVisible="False"/>
+            <TextBlock x:Name="ApkInfo" Classes="hint" Margin="2,2,0,0"/>
+
+            <TextBlock Classes="label" Text="Tester groups (comma-separated):"/>
+            <TextBox x:Name="GroupsBox" TextChanged="Field_Changed" Watermark="qa, internal"/>
+            <TextBlock x:Name="GroupsErr" Classes="field-error" IsVisible="False"/>
+
+            <TextBlock Classes="label" Text="Tester emails (comma-separated, optional):"/>
+            <TextBox x:Name="EmailsBox" TextChanged="Field_Changed"/>
+            <TextBlock x:Name="EmailsErr" Classes="field-error" IsVisible="False"/>
+
+            <TextBlock Classes="label" Text="Release notes:"/>
+            <TextBox x:Name="NotesBox" TextWrapping="Wrap" AcceptsReturn="True" Height="120"
+                     VerticalContentAlignment="Top"/>
+        </StackPanel>
+    </DockPanel>
+</Window>
