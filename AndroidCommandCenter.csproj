@@ -9,6 +9,7 @@
         <InvariantGlobalization>false</InvariantGlobalization>
     </PropertyGroup>
 
+    
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="11.3.20" />
         <PackageReference Include="Avalonia.Desktop" Version="11.3.20" />
