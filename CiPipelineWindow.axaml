@@ -1,0 +1,103 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AndroidCommandCenter.CiPipelineWindow"
+        Title="Promotion CI/CD" Width="700" Height="860"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto">
+        <TextBlock x:Name="ErrorText" Classes="field-error" VerticalAlignment="Center"
+                   TextWrapping="Wrap" IsVisible="False"/>
+        <Button Grid.Column="1" Classes="cmd" Content="Save" Click="Save_Click" Padding="18,6"/>
+        <Button Grid.Column="2" Classes="cmd accent" Content="Save + Dry Run" Click="DryRun_Click"/>
+        <Button Grid.Column="3" Classes="cmd success" Content="Save + Promote" Click="Run_Click"/>
+        <Button Grid.Column="4" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="18,6"/>
+      </Grid>
+    </Border>
+
+    <ScrollViewer Padding="16,12">
+      <StackPanel>
+        <TextBlock Classes="section" Text="BRANCH FLOW" Foreground="#89b4fa"/>
+        <Grid ColumnDefinitions="*,12,*" RowDefinitions="Auto,Auto">
+          <StackPanel>
+            <TextBlock Classes="label" Text="Remote:"/>
+            <TextBox x:Name="RemoteBox"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Gate variant:"/>
+            <TextBox x:Name="VariantBox" Watermark="Release"/>
+          </StackPanel>
+          <StackPanel Grid.Row="1" Margin="0,8,0,0">
+            <TextBlock Classes="label" Text="Development branch:"/>
+            <TextBox x:Name="DevBox"/>
+          </StackPanel>
+          <StackPanel Grid.Row="1" Grid.Column="2" Margin="0,8,0,0">
+            <TextBlock Classes="label" Text="Staging branch:"/>
+            <TextBox x:Name="StagingBox"/>
+          </StackPanel>
+        </Grid>
+        <TextBlock Classes="label" Text="Production branch:" Margin="0,8,0,0"/>
+        <TextBox x:Name="MainBox"/>
+        <TextBlock Classes="hint" Margin="0,5,0,0" TextWrapping="Wrap"
+                   Text="Every run fetches staging, evaluates all enabled gates in an isolated worktree, creates a no-fast-forward merge on production, then back-merges that exact release into development."/>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="QUALITY GATES" Foreground="#f9e2af"/>
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto,Auto">
+          <CheckBox x:Name="LintCheck" Content="Android Lint"/>
+          <CheckBox Grid.Column="1" x:Name="LintWarningsCheck" Content="Fail lint warnings"/>
+          <CheckBox Grid.Row="1" x:Name="UnitCheck" Content="Unit tests"/>
+          <CheckBox Grid.Row="1" Grid.Column="1" x:Name="InstrumentCheck" Content="Instrument tests (emulator only)"/>
+          <CheckBox Grid.Row="2" x:Name="SecretCheck" Content="Secret scan"/>
+          <CheckBox Grid.Row="2" Grid.Column="1" x:Name="ChecksumCheck" Content="Dependency / wrapper checksums"/>
+          <CheckBox Grid.Row="3" x:Name="VersionCheck" Content="Require versionCode bump"/>
+        </Grid>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="PROMOTION" Foreground="#a6e3a1"/>
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+          <CheckBox x:Name="PromoteCheck" Content="Promote staging to production"/>
+          <CheckBox Grid.Column="1" x:Name="PushCheck" Content="Push promoted branches"/>
+          <CheckBox Grid.Row="1" x:Name="TagCheck" Content="Create release tag"/>
+          <CheckBox Grid.Row="1" Grid.Column="1" x:Name="BackMergeCheck" Content="Back-merge production to development"/>
+          <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0">
+            <TextBlock Classes="label" Text="Release tag prefix:"/>
+            <TextBox x:Name="TagPrefixBox" Watermark="v"/>
+          </StackPanel>
+        </Grid>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="SCHEDULE" Foreground="#fab387"/>
+        <CheckBox x:Name="ScheduleCheck" Content="Run promotion CI on a recurring schedule"
+                  IsCheckedChanged="Schedule_Changed"/>
+        <StackPanel x:Name="SchedulePanel" Margin="0,7,0,0">
+          <TextBlock Classes="label" Text="Daily times (24-hour HH:mm, comma-separated):"/>
+          <TextBox x:Name="ScheduleTimesBox" Watermark="02:00, 14:00"/>
+          <TextBlock Classes="hint" Text="The desktop scheduler runs while Android Command Center is open."/>
+        </StackPanel>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="RUN TELEMETRY (OPTIONAL)" Foreground="#cba6f7"/>
+        <CheckBox x:Name="FirestoreCheck" Content="Publish run manifests to Google Firestore"
+                  IsCheckedChanged="Firestore_Changed"/>
+        <StackPanel x:Name="FirestorePanel" Margin="0,7,0,0">
+          <Grid ColumnDefinitions="*,12,*">
+            <StackPanel>
+              <TextBlock Classes="label" Text="Google Cloud project ID:"/>
+              <TextBox x:Name="FirestoreProjectBox"/>
+            </StackPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="label" Text="Collection:"/>
+              <TextBox x:Name="FirestoreCollectionBox" Watermark="ci_runs"/>
+            </StackPanel>
+          </Grid>
+          <TextBlock Classes="label" Text="Service-account JSON:" Margin="0,8,0,0"/>
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBox x:Name="FirestoreCredentialsBox"/>
+            <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseCredentials_Click"/>
+          </Grid>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
+</Window>
