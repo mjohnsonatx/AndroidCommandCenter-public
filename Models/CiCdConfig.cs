@@ -19,7 +19,7 @@ public enum TestFailureAction
 public sealed class CiCdConfig
 {
     public string PipelineRemoteName { get; set; } = "origin";
-    public string PipelineBranch { get; set; } = "main";
+    public string PipelineBranch { get; set; } = "master";
     public bool SyncBranchBeforePipeline { get; set; }
 
     public List<string> BuildVariants { get; set; } = new();

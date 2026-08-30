@@ -64,6 +64,34 @@ public sealed class SyncStage : ICiStage
         var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
         if (!fetch.Ok) throw new StageFailedException($"git fetch failed:\n{fetch.Output}");
 
+        // Repositories created before GitHub changed its default commonly use
+        // master; newer repositories commonly use main. If the saved production
+        // name is the wrong convention, select the one that actually exists.
+        if (!await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, ctx.Main, ct))
+        {
+            string? detected = null;
+            foreach (string candidate in new[] { "master", "main" })
+            {
+                if (string.Equals(candidate, ctx.Main, StringComparison.OrdinalIgnoreCase)) continue;
+                if (await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, candidate, ct))
+                {
+                    detected = candidate;
+                    break;
+                }
+            }
+
+            if (detected is not null)
+            {
+                string configured = ctx.Main;
+                ctx.Config.MainBranch = detected;
+                ctx.Manifest.MainBranch = detected;
+                rec.Data["configuredProductionBranch"] = configured;
+                rec.Data["detectedProductionBranch"] = detected;
+                ctx.Info($"  [config] {ctx.Remote}/{configured} is absent; " +
+                         $"using {ctx.Remote}/{detected} as the production branch.");
+            }
+        }
+
         foreach (var b in new[] { ctx.Staging, ctx.Main, ctx.Dev })
             if (!await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, b, ct))
                 throw new StageFailedException($"Branch '{b}' does not exist on '{ctx.Remote}'.");
@@ -493,7 +521,7 @@ public sealed class BuildStage : ICiStage
 // ─────────────────────────────────────────────────────────────────────────────
 public sealed class PromoteStage : ICiStage
 {
-    public string Name => "Promote to main";
+    public string Name => "Promote to production";
     public bool ShouldRun(CiContext ctx) => ctx.Config.PromoteToMain;
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)

@@ -1,15 +1,16 @@
 namespace AndroidCommandCenter.Models;
 
 /// <summary>
-/// The local CI/CD promotion pipeline: dev → staging → main, then back-merge
-/// main → dev. Merges are --no-ff so every release is one revertable commit.
+/// The local CI/CD promotion pipeline: dev → staging → production, then
+/// back-merge production → dev. Merges are --no-ff so every release is one
+/// revertable commit.
 /// </summary>
 public sealed class CiPipelineConfig
 {
     public string Remote { get; set; } = "origin";
     public string DevBranch { get; set; } = "dev";
     public string StagingBranch { get; set; } = "staging";
-    public string MainBranch { get; set; } = "main";
+    public string MainBranch { get; set; } = "master";
 
     /// <summary>Variant used for lint/test/build gates (usually a release variant).</summary>
     public string GateVariant { get; set; } = "Release";

@@ -2153,6 +2153,9 @@ public partial class MainWindow : Window
         {
             ci.LogMessage -= L;
             ci.ProgressChanged -= UpdateCiProgress;
+            // Sync may have detected main/master automatically. Persist the
+            // resolved production branch so the next run starts with it.
+            _settings.Save();
             _android.ProjectPath = originalProject;
             _android.SelectedVariant = originalVariant;
             _android.TargetDevice = originalTarget;
