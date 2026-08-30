@@ -1,121 +1,105 @@
-<Window x:Class="AndroidCommandCenter.AutomationWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Automated Deployment" Height="820" Width="600"
-        Background="#1e1e2e" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/Dark.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-    <DockPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="16,8,16,12">
-            <Button x:Name="SaveBtn" Content="Save" Style="{StaticResource CmdButton}"
-                    Click="Save_Click" Padding="20,6" />
-            <Button x:Name="SaveRunBtn" Content="Save + Run" Style="{StaticResource CmdButton}"
-                    Click="SaveRun_Click" Background="#40a02b" Foreground="White"
-                    FontWeight="Bold" Padding="20,6" />
-            <Button Content="Cancel" Style="{StaticResource CmdButton}" Click="Cancel_Click" Padding="20,6" />
+        x:Class="AndroidCommandCenter.AutomationWindow"
+        Title="Automated Deployment" Width="620" Height="820"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+      <Grid ColumnDefinitions="*,Auto,Auto,Auto">
+        <TextBlock x:Name="SummaryText" Classes="field-error" VerticalAlignment="Center" IsVisible="False"/>
+        <Button Grid.Column="1" x:Name="SaveBtn" Classes="cmd" Content="Save" Click="Save_Click" Padding="20,6"/>
+        <Button Grid.Column="2" x:Name="SaveRunBtn" Classes="cmd success" Content="Save + Run" Click="SaveRun_Click"/>
+        <Button Grid.Column="3" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="20,6"/>
+      </Grid>
+    </Border>
+    <ScrollViewer Padding="16,12">
+      <StackPanel>
+        <TextBlock Classes="section" Text="GIT SOURCE" Foreground="#89b4fa"/>
+        <Grid ColumnDefinitions="*,12,*">
+          <StackPanel>
+            <TextBlock Classes="label" Text="Remote:" Margin="0,0,0,4"/>
+            <TextBox x:Name="RemoteBox" TextChanged="Field_Changed"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Branch:" Margin="0,0,0,4"/>
+            <TextBox x:Name="BranchBox" TextChanged="Field_Changed"/>
+          </StackPanel>
+        </Grid>
+        <TextBlock x:Name="RemoteErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock x:Name="BranchErr" Classes="field-error" IsVisible="False"/>
+
+        <Grid ColumnDefinitions="*,12,*" Margin="0,8,0,0">
+          <StackPanel>
+            <TextBlock Classes="label" Text="GitHub owner:" Margin="0,0,0,4"/>
+            <TextBox x:Name="GitHubOwnerBox" TextChanged="Field_Changed"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="GitHub repository:" Margin="0,0,0,4"/>
+            <TextBox x:Name="GitHubRepoBox" TextChanged="Field_Changed"/>
+          </StackPanel>
+        </Grid>
+        <TextBlock Classes="label" Text="GitHub token:"/>
+        <TextBox x:Name="GitHubTokenBox" PasswordChar="●" TextChanged="Field_Changed"/>
+        <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+          <ComboBox x:Name="BranchCombo" SelectionChanged="BranchCombo_SelectionChanged"/>
+          <Button Grid.Column="1" x:Name="LoadBranchesBtn" Classes="cmd"
+                  Content="Load Branches" Click="LoadBranches_Click"/>
+        </Grid>
+        <TextBlock x:Name="BranchStatusText" Classes="hint" Margin="0,4,0,0"/>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="SCHEDULE" Foreground="#fab387"/>
+        <CheckBox x:Name="RecurringCheck" Content="Run automated deployment on a recurring schedule"
+                  IsCheckedChanged="RecurringCheck_Changed"/>
+        <StackPanel x:Name="SchedulePanel" Margin="0,8,0,0">
+          <TextBlock Classes="label" Text="Daily run times (24-hour HH:mm, comma-separated):"/>
+          <TextBox x:Name="RunTimesBox" TextChanged="Field_Changed" Watermark="02:00, 14:00"/>
+          <TextBlock x:Name="RunTimesErr" Classes="field-error" IsVisible="False"/>
+          <TextBlock x:Name="NextRunInfo" Classes="hint" Margin="2,4,0,0"/>
         </StackPanel>
 
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="TEST FAILURE DECISION" Foreground="#f9e2af"/>
+        <ComboBox x:Name="FailureCombo" SelectionChanged="Failure_Changed">
+          <ComboBoxItem Content="Automatic bounce back (stop on failure)"/>
+          <ComboBoxItem Content="Warning (notify and continue)"/>
+          <ComboBoxItem Content="Warning + confirm to proceed"/>
+          <ComboBoxItem Content="Silent (ignore failures)"/>
+        </ComboBox>
+        <TextBlock x:Name="FailureWarn" Classes="field-error" IsVisible="False" Margin="2,4,0,0"/>
+
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="EMAIL LOG REPORT" Foreground="#a6e3a1"/>
+        <CheckBox x:Name="EmailCheck" Content="Send email when automation finishes"
+                  IsCheckedChanged="EmailCheck_Changed"/>
+        <StackPanel x:Name="EmailPanel" Margin="0,8,0,0">
+          <TextBlock Classes="label" Text="Recipient email:"/>
+          <TextBox x:Name="ToBox" TextChanged="Field_Changed"/>
+          <TextBlock x:Name="ToErr" Classes="field-error" IsVisible="False"/>
+          <TextBlock Classes="label" Text="From email:"/>
+          <TextBox x:Name="FromBox" TextChanged="Field_Changed"/>
+          <TextBlock x:Name="FromErr" Classes="field-error" IsVisible="False"/>
+          <TextBlock Classes="label" Text="SMTP host:"/>
+          <TextBox x:Name="SmtpHostBox" TextChanged="Field_Changed"/>
+          <TextBlock x:Name="HostErr" Classes="field-error" IsVisible="False"/>
+          <Grid ColumnDefinitions="130,*" Margin="0,8,0,0">
             <StackPanel>
-                <TextBlock Text="GIT SOURCE" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,8" />
-                <TextBlock Text="Remote:" Foreground="#a6adc8" Margin="0,4" />
-                <TextBox x:Name="RemoteBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                <TextBlock Text="Branch:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="BranchBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                <Grid Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="12" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Grid.Column="0">
-                        <TextBlock Text="GitHub owner:" Foreground="#a6adc8" Margin="0,0,0,4" />
-                        <TextBox x:Name="GitHubOwnerBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                    </StackPanel>
-                    <StackPanel Grid.Column="2">
-                        <TextBlock Text="GitHub repository:" Foreground="#a6adc8" Margin="0,0,0,4" />
-                        <TextBox x:Name="GitHubRepoBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                    </StackPanel>
-                </Grid>
-                <TextBlock Text="GitHub token:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <PasswordBox x:Name="GitHubTokenBox" Background="#313244" Foreground="#cdd6f4"
-                             BorderBrush="#45475a" Padding="6,4" FontSize="13"
-                             PasswordChanged="GitHubToken_Changed" />
-                <Grid Margin="0,8,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ComboBox x:Name="BranchCombo" Style="{StaticResource DarkComboBox}"
-                              SelectionChanged="BranchCombo_SelectionChanged" />
-                    <Button Grid.Column="1" x:Name="LoadBranchesBtn" Content="Load Branches"
-                            Style="{StaticResource CmdButton}" Click="LoadBranches_Click" />
-                </Grid>
-                <TextBlock x:Name="BranchStatusText" Foreground="#a6adc8" FontSize="12" Margin="0,4,0,0" />
-
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="SCHEDULE" FontWeight="Bold" Foreground="#fab387" FontSize="14" Margin="0,0,0,8" />
-                <CheckBox x:Name="RecurringCheck" Content="Run automated deployment on a recurring schedule"
-                          Foreground="#cdd6f4" FontSize="13" Margin="0,3"
-                          Checked="RecurringCheck_Changed" Unchecked="RecurringCheck_Changed" />
-
-                <StackPanel x:Name="SchedulePanel" Margin="0,8,0,0">
-                    <TextBlock Text="Daily run times (24-hour HH:mm, comma-separated):" Foreground="#a6adc8" Margin="0,4" />
-                    <TextBox x:Name="RunTimesBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                </StackPanel>
-
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="TEST FAILURE DECISION" FontWeight="Bold" Foreground="#f9e2af" FontSize="14" Margin="0,0,0,8" />
-                <ComboBox x:Name="FailureCombo" Style="{StaticResource DarkComboBox}">
-                    <ComboBoxItem Content="Automatic bounce back (stop on failure)" />
-                    <ComboBoxItem Content="Warning (notify and continue)" />
-                    <ComboBoxItem Content="Warning + confirm to proceed" />
-                    <ComboBoxItem Content="Silent (ignore failures)" />
-                </ComboBox>
-
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="EMAIL LOG REPORT" FontWeight="Bold" Foreground="#a6e3a1" FontSize="14" Margin="0,0,0,8" />
-                <CheckBox x:Name="EmailCheck" Content="Send email when automation finishes"
-                          Foreground="#cdd6f4" FontSize="13" Margin="0,3"
-                          Checked="EmailCheck_Changed" Unchecked="EmailCheck_Changed" />
-
-                <StackPanel x:Name="EmailPanel" Margin="0,8,0,0">
-                    <TextBlock Text="Recipient email:" Foreground="#a6adc8" Margin="0,4" />
-                    <TextBox x:Name="ToBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-
-                    <TextBlock Text="From email:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                    <TextBox x:Name="FromBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-
-                    <TextBlock Text="SMTP host:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                    <TextBox x:Name="SmtpHostBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-
-                    <Grid Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="SMTP port:" Foreground="#a6adc8" Margin="0,0,0,4" />
-                            <TextBox x:Name="SmtpPortBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                        </StackPanel>
-                        <CheckBox Grid.Column="1" x:Name="SslCheck" Content="Use SSL/TLS"
-                                  Foreground="#cdd6f4" FontSize="13" Margin="12,22,0,0" />
-                    </Grid>
-
-                    <TextBlock Text="SMTP username:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                    <TextBox x:Name="UserBox" Style="{StaticResource DarkTextBox}" />
-
-                    <TextBlock Text="SMTP password:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                    <PasswordBox x:Name="PasswordBox" Background="#313244" Foreground="#cdd6f4"
-                                 BorderBrush="#45475a" Padding="6,4" FontSize="13" />
-                </StackPanel>
+              <TextBlock Classes="label" Text="SMTP port:" Margin="0,0,0,4"/>
+              <TextBox x:Name="SmtpPortBox" TextChanged="Field_Changed"/>
             </StackPanel>
-        </ScrollViewer>
-    </DockPanel>
+            <CheckBox Grid.Column="1" x:Name="SslCheck" Content="Use SSL/TLS"
+                      Margin="12,24,0,0" IsCheckedChanged="Field_Checked"/>
+          </Grid>
+          <TextBlock x:Name="PortErr" Classes="field-error" IsVisible="False"/>
+          <TextBlock Classes="label" Text="SMTP username (optional):"/>
+          <TextBox x:Name="UserBox" TextChanged="Field_Changed"/>
+          <TextBlock Classes="label" Text="SMTP password:"/>
+          <TextBox x:Name="PasswordBox" PasswordChar="●" TextChanged="Field_Changed"/>
+          <TextBlock x:Name="PasswordErr" Classes="field-error" IsVisible="False"/>
+          <TextBlock Classes="hint" Margin="0,8,0,0"
+                     Text="Gmail requires an App Password, not your account password. Port 587 = STARTTLS, 465 = implicit TLS."/>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
 </Window>

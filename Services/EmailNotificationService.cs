@@ -1,77 +1,82 @@
-using AndroidCommandCenter.Models;
 using System.IO;
-using System.Net;
-using System.Net.Mail;
+using AndroidCommandCenter.Models;
+using MailKit.Net.Smtp;
+using MailKit.Security;
+using MimeKit;
 
 namespace AndroidCommandCenter.Services;
 
-public class EmailNotificationService
+public sealed class EmailNotificationService
 {
     private const int MaxInlineLogChars = 12000;
-
+    private readonly SecretStore _secrets;
     public event Action<string>? LogMessage;
 
+    public EmailNotificationService(SecretStore secrets) => _secrets = secrets;
+
+    public const string PasswordKey = "smtp/password";
+
     public async Task SendPipelineLog(
-        AutomationConfig automation,
-        string projectName,
-        bool success,
-        string status,
-        string logPath,
-        CancellationToken ct)
+        AutomationConfig automation, string projectName, bool success,
+        string status, string logPath, CancellationToken ct)
     {
-        if (!automation.Email.SendEmail)
-        {
-            LogMessage?.Invoke("Email notification disabled.");
-            return;
-        }
+        if (!automation.Email.SendEmail) { LogMessage?.Invoke("Email notification disabled."); return; }
+        if (!automation.SmtpComplete)
+            throw new InvalidOperationException(
+                "Email is enabled but SMTP settings are incomplete (host, port, from, to).");
 
-        if (!automation.CanSendEmail)
-        {
-            LogMessage?.Invoke("[WARN] Email notification is enabled but SMTP settings are incomplete.");
-            return;
-        }
+        var e = automation.Email;
+        var msg = new MimeMessage();
+        msg.From.Add(MailboxAddress.Parse(e.FromAddress));
+        foreach (var to in Split(e.ToAddress)) msg.To.Add(MailboxAddress.Parse(to));
+        msg.Subject = $"[{(success ? "PASS" : "FAIL")}] {projectName} pipeline — {status}";
 
-        string subject = $"Android Command Center: {projectName} automated pipeline {(success ? "passed" : "failed")}";
         string logText = File.Exists(logPath)
             ? await File.ReadAllTextAsync(logPath, ct)
             : "Pipeline log file was not found.";
+        string inline = logText.Length > MaxInlineLogChars ? logText[^MaxInlineLogChars..] : logText;
 
-        string inlineLog = logText.Length > MaxInlineLogChars
-            ? logText[^MaxInlineLogChars..]
-            : logText;
-
-        using var message = new MailMessage
+        var body = new BodyBuilder
         {
-            From = new MailAddress(automation.Email.FromAddress),
-            Subject = subject,
-            Body =
-                $"Project: {projectName}{Environment.NewLine}" +
-                $"Status: {status}{Environment.NewLine}" +
-                $"Log: {logPath}{Environment.NewLine}{Environment.NewLine}" +
-                $"Recent log output:{Environment.NewLine}{Environment.NewLine}{inlineLog}"
+            TextBody =
+                $"Project: {projectName}\nResult: {(success ? "PASSED" : "FAILED")}\n" +
+                $"Status: {status}\nLog: {logPath}\n\n" +
+                $"--- last {inline.Length} chars of log ---\n\n{inline}"
         };
-
-        foreach (string recipient in SplitAddresses(automation.Email.ToAddress))
-            message.To.Add(recipient);
-
         if (File.Exists(logPath))
-            message.Attachments.Add(new Attachment(logPath));
-
-        using var client = new SmtpClient(automation.Email.SmtpHost, automation.Email.SmtpPort)
         {
-            EnableSsl = automation.Email.EnableSsl
+            try { await body.Attachments.AddAsync(logPath, ct); }
+            catch (Exception ex) { LogMessage?.Invoke($"[WARN] could not attach log: {ex.Message}"); }
+        }
+        msg.Body = body.ToMessageBody();
+
+        using var client = new SmtpClient();
+        // StartTls on 587, SslOnConnect on 465 — the old EnableSsl bool couldn't
+        // express the difference and silently failed on one of them.
+        var secure = e.SmtpPort switch
+        {
+            465 => SecureSocketOptions.SslOnConnect,
+            _ when e.EnableSsl => SecureSocketOptions.StartTls,
+            _ => SecureSocketOptions.None
         };
 
-        if (!string.IsNullOrWhiteSpace(automation.Email.UserName))
-            client.Credentials = new NetworkCredential(automation.Email.UserName, automation.Email.Password);
+        LogMessage?.Invoke($"Connecting to {e.SmtpHost}:{e.SmtpPort} ({secure})…");
+        await client.ConnectAsync(e.SmtpHost, e.SmtpPort, secure, ct);
 
-        LogMessage?.Invoke($"Sending pipeline log email to {automation.Email.ToAddress}...");
-        await client.SendMailAsync(message, ct);
-        LogMessage?.Invoke("Pipeline log email sent.");
+        if (!string.IsNullOrWhiteSpace(e.UserName))
+        {
+            string pw = _secrets.Get(PasswordKey);
+            if (pw.Length == 0)
+                throw new InvalidOperationException(
+                    "SMTP username is set but no password is stored. Re-enter it in Automation settings.");
+            await client.AuthenticateAsync(e.UserName, pw, ct);
+        }
+
+        await client.SendAsync(msg, ct);
+        await client.DisconnectAsync(true, ct);
+        LogMessage?.Invoke($"Pipeline log emailed to {e.ToAddress}.");
     }
 
-    private static IEnumerable<string> SplitAddresses(string addresses) =>
-        addresses
-            .Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(a => !string.IsNullOrWhiteSpace(a));
+    private static IEnumerable<string> Split(string s) =>
+        s.Split([',', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
 }

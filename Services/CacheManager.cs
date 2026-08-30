@@ -15,6 +15,7 @@ public class CacheManager
     private readonly AndroidService _android;
 
     public event Action<string>? LogMessage;
+    private static string GradleHome() => Paths.GradleHome;
 
     public CacheManager(ProcessRunner runner, AndroidService android)
     {
@@ -124,37 +125,64 @@ public class CacheManager
 
     private void CleanAndroidStudioCaches()
     {
-        string google = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google");
-        if (!Directory.Exists(google)) return;
-
-        try
+        var roots = new List<string>();
+        if (Platform.IsWindows)
         {
-            foreach (var dir in Directory.GetDirectories(google, "AndroidStudio*"))
-                SafeDeleteDir(Path.Combine(dir, "system", "caches"));
+            roots.Add(Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Google"));
         }
-        catch (Exception ex) { LogMessage?.Invoke($"  [WARN] {ex.Message}"); }
+        else
+        {
+            string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            roots.Add(Path.Combine(
+                Environment.GetEnvironmentVariable("XDG_CACHE_HOME") ?? Path.Combine(home, ".cache"),
+                "Google"));
+            roots.Add(Path.Combine(home, ".cache", "JetBrains"));
+        }
+        foreach (var root in roots.Where(Directory.Exists))
+        {
+            try
+            {
+                foreach (var dir in Directory.GetDirectories(root)
+                             .Where(d => Path.GetFileName(d)
+                                 .StartsWith("AndroidStudio", StringComparison.OrdinalIgnoreCase)))
+                {
+                    // The whole dir under ~/.cache IS the cache on Linux.
+                    SafeDeleteDir(Platform.IsWindows ? Path.Combine(dir, "system", "caches") : dir);
+                }
+            }
+            catch (Exception ex) { LogMessage?.Invoke($"  [WARN] {ex.Message}"); }
+        }
     }
+
 
     private void SafeDeleteDir(string path)
     {
         if (!Directory.Exists(path)) return;
         try
         {
-            // Clear read-only flags first (common with Gradle cache files)
-            foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+            if (!Platform.IsWindows)
             {
-                try { File.SetAttributes(file, FileAttributes.Normal); } catch { }
+                foreach (var dir in Directory.EnumerateDirectories(path, "*", SearchOption.AllDirectories))
+                    TryChmod(dir, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+                foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                    TryChmod(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            else
+            {
+                foreach (var file in Directory.EnumerateFiles(path, "*", SearchOption.AllDirectories))
+                    try { File.SetAttributes(file, FileAttributes.Normal); } catch { }
             }
             Directory.Delete(path, recursive: true);
             LogMessage?.Invoke($"  Deleted: {path}");
         }
         catch (Exception ex)
         {
-            LogMessage?.Invoke($"  [WARN] Could not delete {Path.GetFileName(path)}: {ex.Message}");
+            LogMessage?.Invoke($"  [WARN] Could not delete {path}: {ex.Message}");
+        }
+        static void TryChmod(string p, UnixFileMode mode)
+        {
+            try { File.SetUnixFileMode(p, File.GetUnixFileMode(p) | mode); } catch { }
         }
     }
-
-    private static string GradleHome() =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gradle");
 }

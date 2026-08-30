@@ -1,154 +1,132 @@
-﻿<Window x:Class="AndroidCommandCenter.FullPipelineWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Full Pipeline" Height="840" Width="600"
-        Background="#1e1e2e" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/Dark.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-    <DockPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="16,8,16,12">
-            <Button x:Name="RunBtn" Content="Run Pipeline" Style="{StaticResource CmdButton}"
-                    Click="Run_Click" Background="#40a02b" Foreground="White" FontWeight="Bold" Padding="20,6" />
-            <Button Content="Cancel" Style="{StaticResource CmdButton}" Click="Cancel_Click" Padding="20,6" />
-        </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
+        xmlns:ui="using:AndroidCommandCenter.UI"
+        x:Class="AndroidCommandCenter.FullPipelineWindow"
+        Title="Full Pipeline" Width="620" Height="840"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock x:Name="SummaryText" Classes="field-error" VerticalAlignment="Center" IsVisible="False"/>
+        <Button Grid.Column="1" x:Name="RunBtn" Classes="cmd success" Content="Run Pipeline" Click="Run_Click"/>
+        <Button Grid.Column="2" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="20,6"/>
+      </Grid>
+    </Border>
+    <ScrollViewer Padding="16,12">
+      <StackPanel>
+        <Border Classes="card">
+          <TextBlock Classes="hint" TextWrapping="Wrap"
+                     Text="Test → build signed → deploy to Firebase, against the LOCAL project path. This is not the branch-promotion pipeline (use CI / CD → Promotion Pipeline for dev → staging → main)."/>
+        </Border>
+
+        <!-- Signing -->
+        <TextBlock Classes="section" Text="SIGNING" Foreground="#89b4fa" Margin="0,14,0,8"/>
+        <TextBlock Classes="label" Text="Keystore file (.jks):"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="KeystoreBox" TextChanged="Field_Changed"/>
+          <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseKeystore_Click"/>
+        </Grid>
+        <TextBlock x:Name="KeystoreErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Keystore password:"/>
+        <TextBox x:Name="StorePassBox" PasswordChar="●" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="StorePassErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Key alias:"/>
+        <TextBox x:Name="KeyAliasBox" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="KeyAliasErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Key password:"/>
+        <TextBox x:Name="KeyPassBox" PasswordChar="●" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="KeyPassErr" Classes="field-error" IsVisible="False"/>
+
+        <!-- GitHub source -->
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="GITHUB SOURCE" Foreground="#cba6f7"/>
+        <CheckBox x:Name="SyncBranchCheck" Content="Pull selected branch before running"
+                  IsCheckedChanged="SyncBranch_Changed"/>
+        <StackPanel x:Name="GitHubPanel" Margin="0,8,0,0">
+          <Grid ColumnDefinitions="*,12,*">
             <StackPanel>
-
-                <!-- Signing -->
-                <TextBlock Text="SIGNING" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,8" />
-                <TextBlock Text="Keystore file (.jks):" Foreground="#a6adc8" Margin="0,4" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="KeystoreBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                    <Button Grid.Column="1" Content="Browse" Style="{StaticResource CmdButton}" Click="BrowseKeystore_Click" />
-                </Grid>
-                <TextBlock Text="Keystore password:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <PasswordBox x:Name="StorePassBox" Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"
-                             Padding="6,4" FontSize="13" PasswordChanged="Pass_Changed" />
-                <TextBlock Text="Key alias:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="KeyAliasBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                <TextBlock Text="Key password:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <PasswordBox x:Name="KeyPassBox" Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"
-                             Padding="6,4" FontSize="13" PasswordChanged="Pass_Changed" />
-
-                <!-- GitHub source -->
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="GITHUB SOURCE" FontWeight="Bold" Foreground="#cba6f7" FontSize="14" Margin="0,0,0,8" />
-                <CheckBox x:Name="SyncBranchCheck" Content="Pull selected branch before running"
-                          Foreground="#cdd6f4" FontSize="13" Margin="0,3"
-                          Checked="SyncBranch_Changed" Unchecked="SyncBranch_Changed" />
-                <StackPanel x:Name="GitHubPanel" Margin="0,8,0,0">
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="12" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Owner:" Foreground="#a6adc8" Margin="0,4" />
-                            <TextBox x:Name="GitHubOwnerBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="2">
-                            <TextBlock Text="Repository:" Foreground="#a6adc8" Margin="0,4" />
-                            <TextBox x:Name="GitHubRepoBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                        </StackPanel>
-                    </Grid>
-
-                    <TextBlock Text="Token:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                    <PasswordBox x:Name="GitHubTokenBox" Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"
-                                 Padding="6,4" FontSize="13" PasswordChanged="GitHubToken_Changed" />
-
-                    <Grid Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <StackPanel Grid.Column="0">
-                            <TextBlock Text="Remote:" Foreground="#a6adc8" Margin="0,0,0,4" />
-                            <TextBox x:Name="RemoteBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                        </StackPanel>
-                        <StackPanel Grid.Column="1" Margin="12,0,0,0">
-                            <TextBlock Text="Branch:" Foreground="#a6adc8" Margin="0,0,0,4" />
-                            <TextBox x:Name="BranchBox" Style="{StaticResource DarkTextBox}" TextChanged="GitHubSource_Changed" />
-                        </StackPanel>
-                    </Grid>
-
-                    <Grid Margin="0,8,0,0">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <ComboBox x:Name="BranchCombo" Style="{StaticResource DarkComboBox}"
-                                  SelectionChanged="BranchCombo_SelectionChanged" />
-                        <Button Grid.Column="1" x:Name="LoadBranchesBtn" Content="Load Branches"
-                                Style="{StaticResource CmdButton}" Click="LoadBranches_Click" />
-                    </Grid>
-                    <TextBlock x:Name="BranchStatusText" Foreground="#a6adc8" FontSize="12" Margin="0,4,0,0" />
-                </StackPanel>
-
-                <!-- Variants -->
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="VARIANTS TO BUILD" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,6" />
-                <ItemsControl x:Name="VariantList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                      Foreground="#cdd6f4" FontSize="13" Margin="0,3"
-                                      Checked="Variant_Changed" Unchecked="Variant_Changed" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-
-                <!-- Firebase -->
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="FIREBASE" FontWeight="Bold" Foreground="#a6e3a1" FontSize="14" Margin="0,0,0,8" />
-                <TextBlock Text="App ID:" Foreground="#a6adc8" Margin="0,4" />
-                <TextBox x:Name="AppIdBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                <TextBlock Text="Service Account JSON:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="JsonBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                    <Button Grid.Column="1" Content="Browse" Style="{StaticResource CmdButton}" Click="BrowseJson_Click" />
-                </Grid>
-                <TextBlock Text="Tester groups:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="GroupsBox" Style="{StaticResource DarkTextBox}" />
-                <TextBlock Text="Tester emails (optional):" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="EmailsBox" Style="{StaticResource DarkTextBox}" />
-                <TextBlock Text="Release notes:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="NotesBox" Style="{StaticResource DarkTextBox}" TextWrapping="Wrap"
-                         AcceptsReturn="True" Height="60" VerticalContentAlignment="Top" />
-
-                <!-- Tests -->
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="TESTS" FontWeight="Bold" Foreground="#f9e2af" FontSize="14" Margin="0,0,0,8" />
-                <CheckBox x:Name="RunUnitCheck" Content="Run unit tests" Foreground="#cdd6f4" FontSize="13"
-                          Margin="0,3" Checked="TestCheck_Changed" Unchecked="TestCheck_Changed" />
-                <CheckBox x:Name="RunInstrumentCheck" Content="Run instrument tests" Foreground="#cdd6f4" FontSize="13"
-                          Margin="0,3" Checked="TestCheck_Changed" Unchecked="TestCheck_Changed" />
-
-                <StackPanel x:Name="FailurePanel" Margin="0,8,0,0">
-                    <TextBlock Text="On test failure:" Foreground="#a6adc8" Margin="0,4" />
-                    <ComboBox x:Name="FailureCombo" Style="{StaticResource DarkComboBox}">
-                        <ComboBoxItem Content="Automatic bounce back (stop on failure)" />
-                        <ComboBoxItem Content="Warning (notify and continue)" />
-                        <ComboBoxItem Content="Warning + confirm to proceed" />
-                        <ComboBoxItem Content="Silent (ignore failures)" />
-                    </ComboBox>
-                </StackPanel>
-
+              <TextBlock Classes="label" Text="Owner:" Margin="0,0,0,4"/>
+              <TextBox x:Name="GitHubOwnerBox" TextChanged="Field_Changed"/>
             </StackPanel>
-        </ScrollViewer>
-    </DockPanel>
+            <StackPanel Grid.Column="2">
+              <TextBlock Classes="label" Text="Repository:" Margin="0,0,0,4"/>
+              <TextBox x:Name="GitHubRepoBox" TextChanged="Field_Changed"/>
+            </StackPanel>
+          </Grid>
+          <TextBlock Classes="label" Text="Token:"/>
+          <TextBox x:Name="GitHubTokenBox" PasswordChar="●" TextChanged="Field_Changed"/>
+          <Grid ColumnDefinitions="140,*" Margin="0,8,0,0">
+            <StackPanel>
+              <TextBlock Classes="label" Text="Remote:" Margin="0,0,0,4"/>
+              <TextBox x:Name="RemoteBox" TextChanged="Field_Changed"/>
+            </StackPanel>
+            <StackPanel Grid.Column="1" Margin="12,0,0,0">
+              <TextBlock Classes="label" Text="Branch:" Margin="0,0,0,4"/>
+              <TextBox x:Name="BranchBox" TextChanged="Field_Changed"/>
+            </StackPanel>
+          </Grid>
+          <TextBlock x:Name="SourceErr" Classes="field-error" IsVisible="False"/>
+          <Grid ColumnDefinitions="*,Auto" Margin="0,8,0,0">
+            <ComboBox x:Name="BranchCombo" SelectionChanged="BranchCombo_SelectionChanged"/>
+            <Button Grid.Column="1" x:Name="LoadBranchesBtn" Classes="cmd"
+                    Content="Load Branches" Click="LoadBranches_Click"/>
+          </Grid>
+          <TextBlock x:Name="BranchStatusText" Classes="hint" Margin="0,4,0,0"/>
+        </StackPanel>
+
+        <!-- Variants -->
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="VARIANTS TO BUILD" Foreground="#89b4fa"/>
+        <ItemsControl x:Name="VariantList">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="ui:VariantChoice">
+              <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock x:Name="VariantErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock x:Name="DeployVariantInfo" Classes="hint" Margin="0,4,0,0"/>
+
+        <!-- Firebase -->
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="FIREBASE" Foreground="#a6e3a1"/>
+        <TextBlock Classes="label" Text="App ID:"/>
+        <TextBox x:Name="AppIdBox" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="AppIdErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Service Account JSON:"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="JsonBox" TextChanged="Field_Changed"/>
+          <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseJson_Click"/>
+        </Grid>
+        <TextBlock x:Name="JsonErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Tester groups:"/>
+        <TextBox x:Name="GroupsBox" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="GroupsErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Tester emails (optional):"/>
+        <TextBox x:Name="EmailsBox" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="EmailsErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock Classes="label" Text="Release notes:"/>
+        <TextBox x:Name="NotesBox" TextWrapping="Wrap" AcceptsReturn="True" Height="70"
+                 VerticalContentAlignment="Top"/>
+
+        <!-- Tests -->
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="TESTS" Foreground="#f9e2af"/>
+        <CheckBox x:Name="RunUnitCheck" Content="Run unit tests" IsCheckedChanged="TestCheck_Changed"/>
+        <CheckBox x:Name="RunInstrumentCheck" Content="Run instrument tests" IsCheckedChanged="TestCheck_Changed"/>
+        <TextBlock x:Name="InstrumentWarn" Classes="hint" Foreground="#f9e2af" IsVisible="False"
+                   Margin="22,0,0,0"
+                   Text="Instrument tests uninstall the app when they finish, deleting all of its data on the target device."/>
+        <StackPanel x:Name="FailurePanel" Margin="0,8,0,0">
+          <TextBlock Classes="label" Text="On test failure:"/>
+          <ComboBox x:Name="FailureCombo">
+            <ComboBoxItem Content="Automatic bounce back (stop on failure)"/>
+            <ComboBoxItem Content="Warning (notify and continue)"/>
+            <ComboBoxItem Content="Warning + confirm to proceed"/>
+            <ComboBoxItem Content="Silent (ignore failures)"/>
+          </ComboBox>
+        </StackPanel>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
 </Window>

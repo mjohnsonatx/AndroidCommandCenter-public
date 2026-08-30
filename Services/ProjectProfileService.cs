@@ -4,55 +4,64 @@ using AndroidCommandCenter.Models;
 
 namespace AndroidCommandCenter.Services;
 
-public class ProjectProfileService
+public sealed class ProjectProfileService
 {
-    private static readonly string Dir =
-        Path.Combine(Environment.GetFolderPath(
-            Environment.SpecialFolder.ApplicationData), "AndroidCommandCenter");
-    private static readonly string FilePath = Path.Combine(Dir, "project_profiles.json");
-
-    private Dictionary<string, ProjectProfile> _profiles = new(StringComparer.OrdinalIgnoreCase);
+    private Dictionary<string, ProjectProfile> _profiles = new(StringComparer.Ordinal);
+    private readonly SecretStore _secrets;
     public event Action<string>? LogMessage;
 
-    public ProjectProfileService()
+    public ProjectProfileService(SecretStore secrets)
     {
-        Directory.CreateDirectory(Dir);
+        _secrets = secrets;
         Load();
     }
 
     private void Load()
     {
-        if (!File.Exists(FilePath)) return;
+        var file = Paths.ProfilesFile;
+        if (!File.Exists(file)) return;
         try
         {
-            var list = JsonSerializer.Deserialize<List<ProjectProfile>>(
-                File.ReadAllText(FilePath)) ?? [];
-            _profiles = list.ToDictionary(p => p.Key, p => p, StringComparer.OrdinalIgnoreCase);
+            var list = JsonSerializer.Deserialize<List<ProjectProfile>>(File.ReadAllText(file)) ?? [];
+            _profiles = list
+                .Where(p => !string.IsNullOrWhiteSpace(p.ProjectPath))
+                .GroupBy(p => p.Key, StringComparer.Ordinal)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+            LogMessage?.Invoke($"[profile] loaded {_profiles.Count} project profile(s)");
         }
-        catch { _profiles = new(StringComparer.OrdinalIgnoreCase); }
+        catch (Exception ex)
+        {
+            LogMessage?.Invoke($"[profile] could not read profiles: {ex.Message}");
+            _profiles = new(StringComparer.Ordinal);
+        }
     }
 
     private void Save()
     {
-        var json = JsonSerializer.Serialize(
-            _profiles.Values.ToList(),
-            new JsonSerializerOptions { WriteIndented = true });
-        File.WriteAllText(FilePath, json);
+        try
+        {
+            var tmp = Paths.ProfilesFile + ".tmp";
+            File.WriteAllText(tmp, JsonSerializer.Serialize(
+                _profiles.Values.ToList(), new JsonSerializerOptions { WriteIndented = true }));
+            File.Move(tmp, Paths.ProfilesFile, overwrite: true);
+        }
+        catch (Exception ex)
+        {
+            LogMessage?.Invoke($"[profile] SAVE FAILED: {ex.Message}");
+            throw;   // caller toasts it — a silent failure loses credentials
+        }
     }
-
-    private static string NormKey(string path) =>
-        path.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
 
     public ProjectProfile GetOrCreate(string projectPath)
     {
-        string key = NormKey(projectPath);
-        if (_profiles.TryGetValue(key, out var existing))
-            return existing;
+        string key = ProjectProfile.NormalizeKey(projectPath);
+        if (_profiles.TryGetValue(key, out var existing)) return existing;
 
         var profile = new ProjectProfile
         {
             ProjectPath = projectPath,
-            DisplayName = Path.GetFileName(projectPath.TrimEnd('\\', '/'))
+            DisplayName = Path.GetFileName(projectPath.TrimEnd('/', '\\')),
+            DefaultBranch = "main"
         };
         _profiles[key] = profile;
         Save();
@@ -66,33 +75,49 @@ public class ProjectProfileService
         LogMessage?.Invoke($"[profile] saved for {profile.DisplayName}");
     }
 
-    /// <summary>
-    /// Fill empty fields from .env defaults, return the merged result.
-    /// Does NOT write back to the profile — caller decides when to persist.
-    /// </summary>
-    public static ProjectProfile MergeWithEnv(ProjectProfile profile, EnvFileService env)
+    /// <summary>True when keystore paths AND both passwords are present.</summary>
+    public bool HasCompleteSigning(ProjectProfile p) =>
+        p.HasSigningPaths &&
+        File.Exists(p.KeystorePath) &&
+        _secrets.Get($"{p.Key}/store-password").Length > 0 &&
+        _secrets.Get($"{p.Key}/key-password").Length > 0;
+
+    public SigningSpec SigningFor(ProjectProfile p) => new(
+        p.KeystorePath, p.KeyAlias,
+        _secrets.Get($"{p.Key}/store-password"),
+        _secrets.Get($"{p.Key}/key-password"));
+
+    public string GitHubToken(ProjectProfile p) => _secrets.Get($"{p.Key}/github-token");
+    public void SetGitHubToken(ProjectProfile p, string token) =>
+        _secrets.Set($"{p.Key}/github-token", token);
+
+    /// <summary>Fill empty fields from .env defaults. Does not persist.</summary>
+    public ProjectProfile MergeWithEnv(ProjectProfile p, EnvFileService env)
     {
-        if (string.IsNullOrWhiteSpace(profile.GitHubOwner))
-            profile.GitHubOwner = env.GitHubOwner;
-        if (string.IsNullOrWhiteSpace(profile.GitHubRepo))
-            profile.GitHubRepo = env.GitHubRepo;
-        if (string.IsNullOrWhiteSpace(profile.GitHubToken))
-            profile.GitHubToken = env.GitHubToken;
-        if (string.IsNullOrWhiteSpace(profile.FirebaseAppId))
-            profile.FirebaseAppId = env.FirebaseAppId;
-        if (string.IsNullOrWhiteSpace(profile.FirebaseCredentialsJson))
-            profile.FirebaseCredentialsJson = env.FirebaseCredentials;
-        if (string.IsNullOrWhiteSpace(profile.FirebaseCliPath) || profile.FirebaseCliPath == "firebase")
-            profile.FirebaseCliPath = string.IsNullOrWhiteSpace(env.FirebaseCliPath) ? "firebase" : env.FirebaseCliPath;
-        if (string.IsNullOrWhiteSpace(profile.KeystorePath))
-            profile.KeystorePath = env.KeystorePath;
-        if (string.IsNullOrWhiteSpace(profile.KeyAlias))
-            profile.KeyAlias = env.KeyAlias;
-        if (string.IsNullOrWhiteSpace(profile.StorePassword))
-            profile.StorePassword = env.StorePassword;
-        if (string.IsNullOrWhiteSpace(profile.KeyPassword))
-            profile.KeyPassword = env.KeyPassword;
-        return profile;
+        if (string.IsNullOrWhiteSpace(p.GitHubOwner)) p.GitHubOwner = env.GitHubOwner;
+        if (string.IsNullOrWhiteSpace(p.GitHubRepo)) p.GitHubRepo = env.GitHubRepo;
+        if (string.IsNullOrWhiteSpace(p.FirebaseAppId)) p.FirebaseAppId = env.FirebaseAppId;
+        if (string.IsNullOrWhiteSpace(p.FirebaseCredentialsJson)) p.FirebaseCredentialsJson = env.FirebaseCredentials;
+        if (string.IsNullOrWhiteSpace(p.FirebaseCliPath) || p.FirebaseCliPath == "firebase")
+            p.FirebaseCliPath = string.IsNullOrWhiteSpace(env.FirebaseCliPath) ? "firebase" : env.FirebaseCliPath;
+        if (string.IsNullOrWhiteSpace(p.KeystorePath)) p.KeystorePath = env.KeystorePath;
+        if (string.IsNullOrWhiteSpace(p.KeyAlias)) p.KeyAlias = env.KeyAlias;
+
+        // Secrets: only seed the keyring from .env when the keyring is empty,
+        // so .env can bootstrap a fresh machine without ever overwriting.
+        Seed($"{p.Key}/github-token", env.GitHubToken);
+        Seed($"{p.Key}/store-password", env.StorePassword);
+        Seed($"{p.Key}/key-password", env.KeyPassword);
+        return p;
+
+        void Seed(string key, string value)
+        {
+            if (!string.IsNullOrWhiteSpace(value) && _secrets.Get(key).Length == 0)
+            {
+                try { _secrets.Set(key, value); }
+                catch (Exception ex) { LogMessage?.Invoke($"[profile] could not seed {key}: {ex.Message}"); }
+            }
+        }
     }
 
     public IReadOnlyList<ProjectProfile> AllProfiles => _profiles.Values.ToList();

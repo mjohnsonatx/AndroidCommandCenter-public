@@ -2,12 +2,29 @@
 
 namespace AndroidCommandCenter.Services;
 
-public class DeviceInfo
+public sealed class DeviceInfo
 {
     public string Serial { get; init; } = "";
     public string State { get; init; } = "";
-    public bool IsEmulator => Serial.StartsWith("emulator");
-    public string DisplayName => IsEmulator ? $"{Serial} (emulator)" : $"{Serial} (device)";
+    public string Model { get; init; } = "";
+    public bool IsEmulator =>
+        Serial.StartsWith("emulator-", StringComparison.OrdinalIgnoreCase) ||
+        Serial.StartsWith("emulator_", StringComparison.OrdinalIgnoreCase);
+    public bool IsOnline => State == "device";
+    public string DisplayName =>
+        (Model.Length > 0 ? $"{Model} ({Serial})" : Serial) +
+        (IsEmulator ? " [emu]" : "") +
+        (IsOnline ? "" : $" — {State}");
+    /// <summary>Actionable text for the non-online states users actually hit.</summary>
+    public string? Problem => State switch
+    {
+        "device"       => null,
+        "unauthorized" => "Accept the USB debugging prompt on the device.",
+        "offline"      => "Device is offline — reconnect the cable or restart adb.",
+        "no permissions" => "udev permissions missing. Install android-udev-rules " +
+                            "and ensure your user is in the 'plugdev' group, then replug.",
+        _              => $"Device state '{State}'."
+    };
 }
 
 public class AvdManager
@@ -31,12 +48,16 @@ public class AvdManager
     // ── AVD names (from SDK) ────────────────────
     public async Task<string[]> GetAvailableAvds(CancellationToken ct)
     {
+        if (!File.Exists(_emulatorPath)) return [];
         var (_, output) = await _runner.RunAndCaptureAsync(
-            _emulatorPath, "-list-avds", ".", ct);
-
+            _emulatorPath, ["-list-avds"], Path.GetTempPath(), ct);
         return output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(s => s.Trim())
-            .Where(s => !string.IsNullOrEmpty(s) && !s.StartsWith("["))
+            .Where(s => s.Length > 0
+                        && !s.StartsWith('[')
+                        && !s.StartsWith("INFO")
+                        && !s.StartsWith("WARNING")
+                        && !s.Contains(' '))          // real AVD names have no spaces
             .ToArray();
     }
 
@@ -105,24 +126,56 @@ public class AvdManager
         // Need to start one
         LogMessage?.Invoke("No emulator detected. Listing AVDs...");
         var avds = await GetAvailableAvds(ct);
-        if (avds.Length == 0)
-        {
-            LogMessage?.Invoke("[ERROR] No AVDs found. Create one in Android Studio > Device Manager.");
-            return null;
-        }
+        
 
         string avdName = (preferredAvd != null && avds.Contains(preferredAvd))
             ? preferredAvd
             : avds[0];
 
-        LogMessage?.Invoke($"Starting AVD: {avdName}");
-        var psi = new ProcessStartInfo
+        
+        if (!File.Exists(_emulatorPath))
         {
-            FileName = _emulatorPath,
-            Arguments = $"-avd \"{avdName}\"",
+            LogMessage?.Invoke($"[ERROR] emulator binary not found at '{_emulatorPath}'.");
+            return null;
+        }
+        
+        if (!Platform.IsWindows && !File.Exists("/dev/kvm"))
+            LogMessage?.Invoke("[WARN] /dev/kvm is missing — the emulator will be unusably slow or " +
+                               "fail to start. Enable virtualisation in BIOS, or check " +
+                               "`ls -l /dev/kvm` and that you are in the 'kvm' group.");
+        else if (!Platform.IsWindows)
+        {
+            try
+            {
+                using var probe = File.Open("/dev/kvm", FileMode.Open, FileAccess.ReadWrite);
+            }
+            catch
+            {
+                LogMessage?.Invoke("[WARN] /dev/kvm exists but is not writable by your user. Run: " +
+                                   "sudo usermod -aG kvm $USER  (then log out and back in).");
+            }
+        }
+
+        LogMessage?.Invoke($"Starting AVD: {avdName}");
+        var psi = new ProcessStartInfo(_emulatorPath)
+        {
             UseShellExecute = false,
-            CreateNoWindow = true
+            CreateNoWindow = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true
         };
+        psi.ArgumentList.Add("-avd");
+        psi.ArgumentList.Add(avdName);
+
+        var emuProc = Process.Start(psi);
+        if (emuProc != null)
+        {
+            // Surface emulator diagnostics instead of discarding them.
+            emuProc.OutputDataReceived += (_, e) => { if (e.Data != null) LogMessage?.Invoke($"[emu] {e.Data}"); };
+            emuProc.ErrorDataReceived  += (_, e) => { if (e.Data != null) LogMessage?.Invoke($"[emu] {e.Data}"); };
+            emuProc.BeginOutputReadLine();
+            emuProc.BeginErrorReadLine();
+        }
         Process.Start(psi);
 
         // Phase 1: wait for the new emulator serial to appear in adb devices
@@ -275,62 +328,78 @@ public class AvdManager
     {
         LogMessage?.Invoke("Waking emulator and dismissing keyguard...");
 
-        await RunAdbSilent($"-s {serial} shell input keyevent KEYCODE_WAKEUP", ct);
-        await RunAdbSilent($"-s {serial} shell wm dismiss-keyguard", ct);
-        await RunAdbSilent($"-s {serial} shell input keyevent 82", ct);
+        await RunAdbSilent(["devices", "-l"], ct);
+        await RunAdbSilent(["-s", serial, "shell", "getprop", "sys.boot_completed"], ct);
+        await RunAdbSilent(["-s", serial, "shell", "input", "keyevent", "KEYCODE_WAKEUP"], ct);
     }
 
     // ── Helpers ─────────────────────────────────
-    private async Task<string> RunAdbSilent(string args, CancellationToken ct)
+    // Replace the whole RunAdbSilent method. The old one leaked processes on
+// timeout, discarded stderr, and could return "" for a successful command
+// whose output arrived after the 1 s race.
+    private async Task<string> RunAdbSilent(IReadOnlyList<string> args, CancellationToken ct)
     {
-        var psi = new ProcessStartInfo
+        if (!File.Exists(_adbPath))
+            throw new InvalidOperationException($"adb not found at '{_adbPath}'.");
+
+        var psi = new ProcessStartInfo(_adbPath)
         {
-            FileName = _adbPath,
-            Arguments = args,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+        foreach (var a in args) psi.ArgumentList.Add(a);
 
-        using var proc = new Process { StartInfo = psi };
-        proc.Start();
-        Task<string> outputTask = proc.StandardOutput.ReadToEndAsync();
-        Task<string> errorTask = proc.StandardError.ReadToEndAsync();
-
-        using var timeout = new CancellationTokenSource(10_000);
+        using var proc = Process.Start(psi)
+                         ?? throw new InvalidOperationException("Failed to start adb.");
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, timeout.Token);
+
+        var stdout = proc.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        var stderr = proc.StandardError.ReadToEndAsync(CancellationToken.None);
         try
         {
             await proc.WaitForExitAsync(linked.Token);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            try { if (!proc.HasExited) proc.Kill(); } catch { }
+            try { if (!proc.HasExited) proc.Kill(entireProcessTree: true); } catch { }
+            ct.ThrowIfCancellationRequested();       // real cancel propagates
+            return "";                                // our 15 s timeout: empty result
         }
-
-        var completed = await Task.WhenAny(outputTask, Task.Delay(1000, CancellationToken.None));
-        _ = errorTask;
-        return completed == outputTask ? await outputTask : "";
+        await Task.WhenAny(Task.WhenAll(stdout, stderr), Task.Delay(2000, CancellationToken.None));
+        return stdout.IsCompletedSuccessfully ? stdout.Result : "";
     }
-
+    
+    // Replace ParseDeviceOutput — `adb devices -l` is space-separated with key:value
+    // extras, not tab-separated, so the old Split('\t') returned nothing for -l.
     private static List<DeviceInfo> ParseDeviceOutput(string output)
     {
         var devices = new List<DeviceInfo>();
-        foreach (var line in output.Split('\n'))
+        foreach (var raw in output.Split('\n'))
         {
-            var trimmed = line.Trim();
-            if (string.IsNullOrEmpty(trimmed) ||
-                trimmed.StartsWith("List") ||
-                trimmed.StartsWith("*")) continue;
+            var line = raw.Trim();
+            if (line.Length == 0) continue;
+            if (line.StartsWith("List of devices")) continue;
+            if (line.StartsWith('*')) continue;                  // daemon messages
+            if (line.StartsWith("adb server")) continue;
 
-            var parts = trimmed.Split('\t');
-            if (parts.Length >= 2)
-                devices.Add(new DeviceInfo
-                {
-                    Serial = parts[0].Trim(),
-                    State = parts[1].Trim()
-                });
+            var parts = line.Split([' ', '\t'], StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length < 2) continue;
+
+            string model = "";
+            foreach (var p in parts.Skip(2))
+                if (p.StartsWith("model:", StringComparison.OrdinalIgnoreCase))
+                    model = p[6..].Replace('_', ' ');
+
+            devices.Add(new DeviceInfo
+            {
+                Serial = parts[0],
+                // "no permissions" arrives as two tokens; rejoin the tail.
+                State = string.Join(' ', parts.Skip(1).TakeWhile(p => !p.Contains(':'))),
+                Model = model
+            });
         }
         return devices;
     }

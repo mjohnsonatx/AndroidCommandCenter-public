@@ -1,438 +1,366 @@
-﻿<Window x:Class="AndroidCommandCenter.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Android Command Center"
-        Height="880" Width="1160"
-        Background="#1e1e2e"
+        xmlns:ui="using:AndroidCommandCenter.UI"
+        x:Class="AndroidCommandCenter.MainWindow"
+        Title="Android Command Center" Width="1240" Height="900"
         WindowStartupLocation="CenterScreen">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/Dark.xaml"/>
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-
+  <!-- Panel, not Grid, so the toast host floats above everything -->
+  <Panel>
     <DockPanel>
-        <!-- ═══ TOP BAR: Selectors + Gauges ═══════════════════ -->
-        <Border DockPanel.Dock="Top" Background="#181825" Padding="10,6">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="Auto"/>
-                </Grid.RowDefinitions>
+      <!-- ═══ TOP BAR ═══ -->
+      <Border DockPanel.Dock="Top" Background="#181825" Padding="10,6">
+        <StackPanel Spacing="6">
+          <Grid ColumnDefinitions="Auto,200,Auto,20,Auto,170,Auto,20,Auto,150,Auto,*">
+            <TextBlock Grid.Column="0" Text="Project:" Foreground="#a6adc8" FontWeight="Bold"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox Grid.Column="1" x:Name="ProjectCombo" SelectionChanged="ProjectCombo_SelectionChanged"/>
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+              <Button Classes="cmd" Content="+" Width="30" Click="AddProject_Click" ToolTip.Tip="Add project folder"/>
+              <Button Classes="cmd" Content="−" Width="30" Click="RemoveProject_Click" ToolTip.Tip="Remove from list"/>
+            </StackPanel>
+            <TextBlock Grid.Column="4" Text="Variant:" Foreground="#a6adc8" FontWeight="Bold"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox Grid.Column="5" x:Name="VariantCombo" SelectionChanged="VariantCombo_SelectionChanged"/>
+            <Button Grid.Column="6" Classes="cmd" Content="Detect" Click="DetectVariants_Click"/>
+            <TextBlock Grid.Column="8" Text="AVD:" Foreground="#a6adc8" FontWeight="Bold"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox Grid.Column="9" x:Name="AvdCombo" SelectionChanged="AvdCombo_SelectionChanged"/>
+            <Button Grid.Column="10" Classes="cmd" Content="↻" Width="30" Click="RefreshAvds_Click"/>
+          </Grid>
 
-                <!-- Row 0: Project / Variant / AVD -->
-                <Grid Grid.Row="0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="200"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="170"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="20"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="150"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0"  Text="Project:" Foreground="#a6adc8" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox  Grid.Column="1"  x:Name="ProjectCombo" Style="{StaticResource DarkComboBox}" SelectionChanged="ProjectCombo_SelectionChanged"/>
-                    <StackPanel Grid.Column="2" Orientation="Horizontal">
-                        <Button Content="+" Style="{StaticResource CmdButton}" Width="28" Click="AddProject_Click"/>
-                        <Button Content="−" Style="{StaticResource CmdButton}" Width="28" Click="RemoveProject_Click"/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="4"  Text="Variant:" Foreground="#a6adc8" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox  Grid.Column="5"  x:Name="VariantCombo" Style="{StaticResource DarkComboBox}" SelectionChanged="VariantCombo_SelectionChanged"/>
-                    <Button    Grid.Column="6"  Content="Detect" Style="{StaticResource CmdButton}" Click="DetectVariants_Click"/>
-                    <TextBlock Grid.Column="8"  Text="AVD:" Foreground="#a6adc8" FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox  Grid.Column="9"  x:Name="AvdCombo" Style="{StaticResource DarkComboBox}" SelectionChanged="AvdCombo_SelectionChanged"/>
-                    <Button    Grid.Column="10" Content="↻" Style="{StaticResource CmdButton}" Width="28" Click="RefreshAvds_Click"/>
-                </Grid>
+          <Grid ColumnDefinitions="Auto,130,16,Auto,130,24,Auto,24,Auto,200,16,Auto,*,Auto">
+            <TextBlock Grid.Column="0" Text="CPU" Foreground="#6c7086" FontSize="12"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <Panel Grid.Column="1">
+              <ProgressBar x:Name="CpuBar" Classes="dash" Maximum="100" Foreground="#89b4fa"/>
+              <TextBlock x:Name="CpuLabel" Text="—" FontSize="10" FontWeight="Bold" Foreground="#11111b"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Panel>
+            <TextBlock Grid.Column="3" Text="RAM" Foreground="#6c7086" FontSize="12"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <Panel Grid.Column="4">
+              <ProgressBar x:Name="MemBar" Classes="dash" Maximum="100" Foreground="#a6e3a1"/>
+              <TextBlock x:Name="MemLabel" Text="—" FontSize="10" FontWeight="Bold" Foreground="#11111b"
+                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Panel>
+            <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="Java:" Foreground="#a6adc8" FontSize="12"/>
+              <TextBlock x:Name="DaemonLabel" Text="0" Foreground="#f9e2af" FontWeight="Bold"
+                         FontSize="12" Margin="4,0,0,0"/>
+            </StackPanel>
+            <TextBlock Grid.Column="8" Text="Target:" Foreground="#a6adc8" FontSize="12"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <ComboBox Grid.Column="9" x:Name="DeviceCombo" SelectionChanged="DeviceCombo_SelectionChanged"/>
+            <TextBlock Grid.Column="11" Text="Connected:" Foreground="#a6adc8" FontSize="12"
+                       VerticalAlignment="Center" Margin="0,0,6,0"/>
+            <TextBlock Grid.Column="12" x:Name="DeviceListLabel" Text="(scanning…)" FontSize="12"
+                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+            <StackPanel Grid.Column="13" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
+              <ProgressBar x:Name="BusySpinner" IsIndeterminate="True" IsVisible="False"
+                           Width="80" Height="4"/>
+              <TextBlock Text="Status:" Foreground="#a6adc8" FontSize="12"/>
+              <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="#a6e3a1"
+                         FontWeight="Bold" FontSize="12"/>
+            </StackPanel>
+          </Grid>
+        </StackPanel>
+      </Border>
 
-                <!-- Row 1: Gauges + Device -->
-                <Grid Grid.Row="1" Margin="0,6,0,0">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="130"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="130"/>
-                        <ColumnDefinition Width="24"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="24"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="180"/>
-                        <ColumnDefinition Width="16"/>
-                        <ColumnDefinition Width="Auto"/>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="Auto"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="CPU" Foreground="#6c7086" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
-                    <Grid Grid.Column="1">
-                        <ProgressBar x:Name="CpuBar" Style="{StaticResource DashBar}" Value="0" Maximum="100" Foreground="#89b4fa"/>
-                        <TextBlock x:Name="CpuLabel" Text="0%" FontSize="10" FontWeight="Bold" Foreground="#11111b" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Grid>
-                    <TextBlock Grid.Column="3" Text="RAM" Foreground="#6c7086" VerticalAlignment="Center" Margin="0,0,6,0" FontSize="12"/>
-                    <Grid Grid.Column="4">
-                        <ProgressBar x:Name="MemBar" Style="{StaticResource DashBar}" Value="0" Maximum="100" Foreground="#a6e3a1"/>
-                        <TextBlock x:Name="MemLabel" Text="0 MB" FontSize="10" FontWeight="Bold" Foreground="#11111b" HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                    </Grid>
-                    <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="Java:" Foreground="#a6adc8" FontSize="12"/>
-                        <TextBlock x:Name="DaemonLabel" Text="0" Foreground="#f9e2af" FontWeight="Bold" FontSize="12" Margin="4,0,0,0"/>
-                    </StackPanel>
-                    <TextBlock Grid.Column="8" Text="Target:" Foreground="#a6adc8" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <ComboBox Grid.Column="9" x:Name="DeviceCombo" Style="{StaticResource DarkComboBox}" SelectionChanged="DeviceCombo_SelectionChanged"/>
-                    <TextBlock Grid.Column="11" Text="Connected:" Foreground="#a6adc8" FontSize="12" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                    <TextBlock Grid.Column="12" x:Name="DeviceListLabel" Text="(scanning…)" Foreground="#cdd6f4" FontSize="12" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-                    <StackPanel Grid.Column="13" Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="Status:" Foreground="#a6adc8" FontSize="12" Margin="12,0,4,0"/>
-                        <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="#a6e3a1" FontWeight="Bold" FontSize="12"/>
-                    </StackPanel>
-                </Grid>
-            </Grid>
-        </Border>
+      <!-- ═══ CONTEXT BANNER ═══ -->
+      <Border DockPanel.Dock="Top" Classes="ctx-banner">
+        <WrapPanel>
+          <TextBlock Classes="ctx-key" Text="Working on:"/>
+          <TextBlock x:Name="CtxProjectLabel" Classes="ctx-value" Text="(no project)"/>
+          <TextBlock Classes="ctx-key" Text="Repo:"/>
+          <TextBlock x:Name="CtxRepoLabel" Classes="ctx-value" Text="—"/>
+          <TextBlock Classes="ctx-key" Text="Branch:"/>
+          <TextBlock x:Name="CtxBranchLabel" Classes="ctx-value" Text="—"/>
+          <TextBlock Classes="ctx-key" Text="Signing:"/>
+          <TextBlock x:Name="CtxSigningLabel" Classes="ctx-value" Text="—"/>
+          <TextBlock Classes="ctx-key" Text="Firebase:"/>
+          <TextBlock x:Name="CtxFirebaseLabel" Classes="ctx-value" Text="—"/>
+          <TextBlock Classes="ctx-key" Text="Secrets:"/>
+          <TextBlock x:Name="CtxSecretsLabel" Classes="ctx-value" Text="—"/>
+        </WrapPanel>
+      </Border>
 
-        <!-- ═══ CONTEXT BANNER: What are we operating on? ═════ -->
-        <Border DockPanel.Dock="Top" Style="{StaticResource ContextBanner}">
-            <WrapPanel>
-                <TextBlock Style="{StaticResource ContextKey}" Text="Working on:"/>
-                <TextBlock x:Name="CtxProjectLabel" Style="{StaticResource ContextValue}" Text="(no project)"/>
-                <TextBlock Style="{StaticResource ContextKey}" Text="Repo:"/>
-                <TextBlock x:Name="CtxRepoLabel" Style="{StaticResource ContextValue}" Text="—"/>
-                <TextBlock Style="{StaticResource ContextKey}" Text="Branch:"/>
-                <TextBlock x:Name="CtxBranchLabel" Style="{StaticResource ContextValue}" Text="—"/>
-                <TextBlock Style="{StaticResource ContextKey}" Text="Firebase:"/>
-                <TextBlock x:Name="CtxFirebaseLabel" Style="{StaticResource ContextValue}" Text="—"/>
-                <TextBlock Style="{StaticResource ContextKey}" Text="Target:"/>
-                <TextBlock x:Name="CtxTargetLabel" Style="{StaticResource ContextValue}" Text="local project path"/>
-            </WrapPanel>
-        </Border>
-
-        <!-- ═══ BODY: SIDEBAR + CONTENT ═══════════════════════ -->
-        <Grid>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="210" MinWidth="150" MaxWidth="320"/>
-                <ColumnDefinition Width="Auto"/>
-                <ColumnDefinition Width="*"/>
-            </Grid.ColumnDefinitions>
-
-            <!-- ── LEFT SIDEBAR ─────────────────────────── -->
-            <Border Grid.Column="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,1,0">
-                <DockPanel>
-                    <Border DockPanel.Dock="Bottom" BorderBrush="#313244" BorderThickness="0,1,0,0" Padding="4,6">
-                        <StackPanel>
-                            <Button Content="⏹ Cancel"   Style="{StaticResource NavButtonDanger}" Click="Cancel_Click"/>
-                            <Button Content="🗑 Clear Log" Style="{StaticResource NavButton}"       Click="ClearLog_Click"/>
-                        </StackPanel>
-                    </Border>
-                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                        <StackPanel Margin="4,6,4,4">
-                            <Expander Header="Build" Style="{StaticResource NavExpander}">
-                                <StackPanel>
-                                    <Button Content="Clean"      Style="{StaticResource NavButton}" Click="Clean_Click"/>
-                                    <Button Content="Build"      Style="{StaticResource NavButton}" Click="Build_Click" ToolTip="Builds the selected variant from LOCAL project path"/>
-                                    <Button Content="Build All"  Style="{StaticResource NavButton}" Click="BuildAll_Click"/>
-                                    <Button Content="List Tasks" Style="{StaticResource NavButton}" Click="ListTasks_Click"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="Tests" Style="{StaticResource NavExpander}">
-                                <StackPanel>
-                                    <Button Content="Unit Tests"       Style="{StaticResource NavButton}" Click="UnitTests_Click"
-                                            ToolTip="Runs against LOCAL project. Use Source tab to pull a branch first."/>
-                                    <Button Content="Instrument Tests" Style="{StaticResource NavButton}" Click="InstrumentTests_Click"
-                                            ToolTip="Runs against LOCAL project on target device/emulator"/>
-                                    <Button Content="▶ Full Test Run"  Style="{StaticResource NavButtonAccent}" Click="FullTestRun_Click"
-                                            ToolTip="Clean → Unit → Instrument on LOCAL project"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="Test Devices" Style="{StaticResource NavExpander}" IsExpanded="False">
-                                <StackPanel>
-                                    <TextBlock Text="Instrument tests wipe app data on the device they run on. When this list has entries, only these serials may be used (emulators always allowed). Empty = any device."
-                                               Foreground="#a6adc8" FontSize="11" TextWrapping="Wrap" Margin="4,0,4,6"/>
-                                    <ListBox x:Name="AuthorizedDevicesList" MinHeight="48" MaxHeight="96" FontSize="12" Margin="4,0,4,4"
-                                             Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a"/>
-                                    <TextBox x:Name="AuthorizedSerialBox" Style="{StaticResource DarkTextBox}" Margin="4,0,4,4"
-                                             ToolTip="Serial to authorize. Leave empty to add the device selected in the Target combo."/>
-                                    <Button Content="Authorize Device" Style="{StaticResource NavButton}" Click="AuthorizeDevice_Click"
-                                            ToolTip="Adds the serial above, or the Target combo selection when the box is empty"/>
-                                    <Button Content="Remove Selected" Style="{StaticResource NavButton}" Click="RemoveAuthorizedDevice_Click"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="Environment" Style="{StaticResource NavExpander}">
-                                <StackPanel>
-                                    <Button Content="List Devices" Style="{StaticResource NavButton}" Click="Devices_Click"/>
-                                    <Button Content="Start AVD"    Style="{StaticResource NavButton}" Click="StartAvd_Click"/>
-                                    <Button Content="Stop Daemons" Style="{StaticResource NavButton}" Click="StopDaemons_Click"/>
-                                    <Button Content="Restart ADB"  Style="{StaticResource NavButton}" Click="RestartAdb_Click"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="Cache" Style="{StaticResource NavExpander}" IsExpanded="False">
-                                <StackPanel>
-                                    <Button Content="Light Clean"     Style="{StaticResource NavButton}" Click="CacheLight_Click"/>
-                                    <Button Content="Medium Clean"    Style="{StaticResource NavButton}" Click="CacheMedium_Click"/>
-                                    <Button Content="Heavy Clean"     Style="{StaticResource NavButton}" Click="CacheHeavy_Click"/>
-                                    <Button Content="Lock Files Only" Style="{StaticResource NavButton}" Click="CleanLocks_Click"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="CI / CD" Style="{StaticResource NavExpander}" IsExpanded="False">
-                                <StackPanel>
-                                    <Button x:Name="FirebaseConfigButton"  Content="Firebase Config"   Style="{StaticResource NavButton}" Click="FirebaseConfig_Click"/>
-                                    <Button x:Name="BuildSignedButton"     Content="Build Signed APK"  Style="{StaticResource NavButton}" Click="BuildSigned_Click"
-                                            ToolTip="Signs the LOCAL project APK with this project's keystore"/>
-                                    <Button x:Name="DeployFirebaseButton"  Content="Deploy to Firebase" Style="{StaticResource NavButton}" Click="DeployFirebase_Click" ToolTipService.ShowOnDisabled="True"/>
-                                    <Button x:Name="FullPipelineButton"    Content="▶ Full Pipeline"   Style="{StaticResource NavButtonGreen}" Click="FullPipeline_Click"
-                                            ToolTip="Optionally syncs branch → test → build → deploy"/>
-                                </StackPanel>
-                            </Expander>
-                            <Expander Header="Automation" Style="{StaticResource NavExpander}" IsExpanded="False">
-                                <StackPanel>
-                                    <Button Content="Configure Schedule" Style="{StaticResource NavButton}" Click="AutomationConfig_Click"/>
-                                    <Button Content="Run Auto Now"       Style="{StaticResource NavButtonAccent}" Click="RunAutomatedDeployment_Click"/>
-                                </StackPanel>
-                            </Expander>
-                        </StackPanel>
-                    </ScrollViewer>
-                </DockPanel>
+      <!-- ═══ BODY ═══ -->
+      <Grid ColumnDefinitions="220,4,*">
+        <!-- SIDEBAR -->
+        <Border Grid.Column="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,1,0">
+          <DockPanel>
+            <Border DockPanel.Dock="Bottom" BorderBrush="#313244" BorderThickness="0,1,0,0" Padding="4,6">
+              <StackPanel>
+                <Button x:Name="CancelButton" Classes="nav danger" Content="⏹ Cancel" Click="Cancel_Click"
+                        IsEnabled="False"/>
+                <Button Classes="nav" Content="🗑 Clear Log" Click="ClearLog_Click"/>
+              </StackPanel>
             </Border>
+            <ScrollViewer>
+              <StackPanel x:Name="SidebarOps" Margin="4,6,4,4">
+                <Expander Classes="nav" Header="Build" IsExpanded="True">
+                  <StackPanel>
+                    <Button Classes="nav" Content="Clean" Click="Clean_Click"/>
+                    <Button Classes="nav" Content="Build" Click="Build_Click"
+                            ToolTip.Tip="Builds the selected variant from the LOCAL project path"/>
+                    <Button Classes="nav" Content="Build All" Click="BuildAll_Click"/>
+                    <Button Classes="nav" Content="Lint" Click="Lint_Click"
+                            ToolTip.Tip="Android Lint for the selected variant"/>
+                    <Button Classes="nav" Content="List Tasks" Click="ListTasks_Click"/>
+                  </StackPanel>
+                </Expander>
 
-            <GridSplitter Grid.Column="1" Width="4" Background="#313244" HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
+                <Expander Classes="nav" Header="Tests" IsExpanded="True">
+                  <StackPanel>
+                    <Button Classes="nav" Content="Unit Tests" Click="UnitTests_Click"/>
+                    <Button Classes="nav" Content="Instrument Tests" Click="InstrumentTests_Click"
+                            ToolTip.Tip="Wipes app data on the target device when it finishes"/>
+                    <Button Classes="nav accent" Content="▶ Full Test Run" Click="FullTestRun_Click"
+                            ToolTip.Tip="Clean → Unit → Instrument on the LOCAL project"/>
+                  </StackPanel>
+                </Expander>
 
-            <!-- ── RIGHT: TABS + LOG ────────────────────── -->
-            <Grid Grid.Column="2">
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="*"/>
-                    <RowDefinition Height="Auto"/>
-                    <RowDefinition Height="220" MinHeight="80"/>
-                </Grid.RowDefinitions>
+                <Expander Classes="nav" Header="Test Devices">
+                  <StackPanel>
+                    <TextBlock Classes="hint" Margin="4,0,4,6"
+                               Text="Instrument tests wipe app data on the device they run on. When this list has entries, only these serials may be used (emulators always allowed). Empty = any device."/>
+                    <ListBox x:Name="AuthorizedDevicesList" MinHeight="48" MaxHeight="96"
+                             FontSize="12" Margin="4,0,4,4"/>
+                    <TextBox x:Name="AuthorizedSerialBox" Margin="4,0,4,4"
+                             Watermark="serial (blank = use Target)"/>
+                    <Button Classes="nav" Content="Authorize Device" Click="AuthorizeDevice_Click"/>
+                    <Button Classes="nav" Content="Remove Selected" Click="RemoveAuthorizedDevice_Click"/>
+                  </StackPanel>
+                </Expander>
 
-                <TabControl Grid.Row="0" Style="{StaticResource DarkTabControl}">
+                <Expander Classes="nav" Header="Environment" IsExpanded="True">
+                  <StackPanel>
+                    <Button Classes="nav" Content="List Devices" Click="Devices_Click"/>
+                    <Button Classes="nav" Content="Start AVD" Click="StartAvd_Click"/>
+                    <Button Classes="nav" Content="Stop Daemons" Click="StopDaemons_Click"/>
+                    <Button Classes="nav" Content="Restart ADB" Click="RestartAdb_Click"/>
+                    <Button Classes="nav" Content="Check Environment" Click="CheckEnv_Click"/>
+                  </StackPanel>
+                </Expander>
 
-                    <!-- ╌╌ SOURCE TAB ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ -->
-                    <TabItem Header="Source" Style="{StaticResource DarkTabItem}">
-                        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="12">
-                            <StackPanel Margin="12">
-                                <TextBlock Text="GITHUB ACCOUNT" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,8"/>
+                <Expander Classes="nav" Header="Cache">
+                  <StackPanel>
+                    <Button Classes="nav" Content="Light Clean" Click="CacheLight_Click"/>
+                    <Button Classes="nav" Content="Medium Clean" Click="CacheMedium_Click"/>
+                    <Button Classes="nav" Content="Heavy Clean" Click="CacheHeavy_Click"/>
+                    <Button Classes="nav" Content="Lock Files Only" Click="CleanLocks_Click"/>
+                  </StackPanel>
+                </Expander>
 
-                                <!-- Owner + Token -->
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="Owner:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                                    <TextBox x:Name="MainGitHubOwnerBox" Grid.Column="1" Style="{StaticResource DarkTextBox}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Token:" Foreground="#a6adc8" VerticalAlignment="Center" Grid.Row="1"/>
-                                    <PasswordBox x:Name="MainGitHubTokenBox" Grid.Row="1" Grid.Column="1"
-                                                 Background="#313244" Foreground="#cdd6f4" BorderBrush="#45475a" Padding="6,4" FontSize="13"/>
-                                </Grid>
+                <Expander Classes="nav" Header="CI / CD">
+                  <StackPanel>
+                    <Button x:Name="FirebaseConfigButton" Classes="nav" Content="Firebase Config"
+                            Click="FirebaseConfig_Click"/>
+                    <Button x:Name="BuildSignedButton" Classes="nav" Content="Build Signed APK"
+                            Click="BuildSigned_Click"/>
+                    <Button x:Name="DeployFirebaseButton" Classes="nav" Content="Deploy to Firebase"
+                            Click="DeployFirebase_Click"/>
+                    <Button x:Name="FullPipelineButton" Classes="nav green" Content="▶ Full Pipeline"
+                            Click="FullPipeline_Click"/>
+                  </StackPanel>
+                </Expander>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <Button Content="Load Repos" Style="{StaticResource CmdButton}" Click="LoadRepos_Click" ToolTip="Fetch repositories for this owner"/>
-                                    <Button Content="Load .env"  Style="{StaticResource CmdButton}" Click="LoadFromEnv_Click"/>
-                                    <Button Content="Save .env"  Style="{StaticResource CmdButton}" Click="SaveToEnv_Click"/>
-                                </StackPanel>
+                <Expander Classes="nav" Header="Automation">
+                  <StackPanel>
+                    <Button Classes="nav" Content="Configure Schedule" Click="AutomationConfig_Click"/>
+                    <Button Classes="nav accent" Content="Run Auto Now" Click="RunAutomatedDeployment_Click"/>
+                  </StackPanel>
+                </Expander>
+              </StackPanel>
+            </ScrollViewer>
+          </DockPanel>
+        </Border>
 
-                                <Separator Background="#313244" Margin="0,12,0,8"/>
+        <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"/>
 
-                                <!-- Repo dropdown -->
-                                <TextBlock Text="REPOSITORY" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,8"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="Repo:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                                    <ComboBox x:Name="MainGitHubRepoCombo" Grid.Column="1"
-                                              Style="{StaticResource DarkComboBox}" IsEditable="True"
-                                              SelectionChanged="RepoCombo_SelectionChanged"/>
-                                </Grid>
-                                <!-- keep a hidden textbox to preserve the raw value for backward compat -->
-                                <TextBox x:Name="MainGitHubRepoBox" Visibility="Collapsed"/>
+        <!-- RIGHT -->
+        <Grid Grid.Column="2" RowDefinitions="*,4,220">
+          <TabControl Grid.Row="0">
+            <!-- SOURCE -->
+            <TabItem Header="Source">
+              <ScrollViewer Padding="12">
+                <StackPanel Margin="12" MaxWidth="720" HorizontalAlignment="Left">
+                  <TextBlock Classes="section" Text="GITHUB ACCOUNT" Foreground="#89b4fa"/>
+                  <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto">
+                    <TextBlock Text="Owner:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" x:Name="MainGitHubOwnerBox" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="1" Text="Token:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainGitHubTokenBox" PasswordChar="●"/>
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button Classes="cmd" Content="Load Repos" Click="LoadRepos_Click"/>
+                    <Button Classes="cmd" Content="Save Credentials" Click="SaveCreds_Click"
+                            ToolTip.Tip="Stores the token in the system keyring"/>
+                    <Button Classes="cmd" Content="Load .env" Click="LoadFromEnv_Click"/>
+                    <Button Classes="cmd" Content="Save .env" Click="SaveToEnv_Click"/>
+                  </StackPanel>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                    <Button x:Name="MainLoadBranchesButton" Content="Load Branches" Style="{StaticResource CmdButton}" Click="MainLoadBranches_Click"/>
-                                </StackPanel>
+                  <Separator/>
+                  <TextBlock Classes="section" Text="REPOSITORY" Foreground="#89b4fa"/>
+                  <Grid ColumnDefinitions="80,*">
+                    <TextBlock Text="Repo:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Column="1" x:Name="MainGitHubRepoCombo"
+                              SelectionChanged="RepoCombo_SelectionChanged"/>
+                  </Grid>
+                  <TextBox x:Name="MainGitHubRepoBox" Margin="80,6,0,0"
+                           Watermark="or type a repository name"/>
+                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
+                    <Button x:Name="MainLoadBranchesButton" Classes="cmd" Content="Load Branches"
+                            Click="MainLoadBranches_Click"/>
+                  </StackPanel>
 
-                                <Separator Background="#313244" Margin="0,12,0,8"/>
+                  <Separator/>
+                  <TextBlock Classes="section" Text="BRANCH" Foreground="#cba6f7"/>
+                  <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto">
+                    <TextBlock Text="Remote:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <TextBox Grid.Column="1" x:Name="MainGitRemoteBox" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="1" Text="Name:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainBranchBox" Margin="0,0,0,6"/>
+                    <TextBlock Grid.Row="2" Text="Select:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="MainBranchCombo"
+                              SelectionChanged="MainBranchCombo_SelectionChanged"/>
+                  </Grid>
+                  <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
+                    <Button x:Name="MainPullBranchButton" Classes="cmd" Content="Pull Branch"
+                            Click="MainPullBranch_Click"
+                            ToolTip.Tip="Fetch + checkout + fast-forward pull into the LOCAL project folder"/>
+                    <Button Classes="cmd" Content="Repo Status" Click="RepoStatus_Click"/>
+                  </StackPanel>
 
-                                <!-- Branch -->
-                                <TextBlock Text="BRANCH" FontWeight="Bold" Foreground="#cba6f7" FontSize="14" Margin="0,0,0,8"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="70"/>
-                                        <ColumnDefinition Width="*"/>
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                        <RowDefinition Height="Auto"/>
-                                    </Grid.RowDefinitions>
-                                    <TextBlock Text="Remote:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                                    <TextBox x:Name="MainGitRemoteBox" Grid.Column="1" Style="{StaticResource DarkTextBox}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Name:" Foreground="#a6adc8" VerticalAlignment="Center" Grid.Row="1"/>
-                                    <TextBox x:Name="MainBranchBox" Grid.Column="1" Grid.Row="1" Style="{StaticResource DarkTextBox}" Margin="0,0,0,6"/>
-                                    <TextBlock Text="Select:" Foreground="#a6adc8" VerticalAlignment="Center" Grid.Row="2"/>
-                                    <ComboBox x:Name="MainBranchCombo" Grid.Column="1" Grid.Row="2" Style="{StaticResource DarkComboBox}"
-                                              SelectionChanged="MainBranchCombo_SelectionChanged"/>
-                                </Grid>
+                  <Border Classes="card" Margin="0,16,0,0">
+                    <TextBlock TextWrapping="Wrap" Foreground="#6c7086" FontSize="12">
+                      <Run FontWeight="Bold" Foreground="#f9e2af">How it works:</Run><LineBreak/>
+                      All build, test, and deploy operations run against the
+                      <Run FontWeight="Bold" Foreground="#cdd6f4">local project path</Run> selected in the top bar.
+                      <LineBreak/><LineBreak/>
+                      "Pull Branch" updates the local checkout to match a remote branch. Use it before
+                      building if you want to test a specific branch.
+                      <LineBreak/><LineBreak/>
+                      Credentials are stored per-project in the system keyring and auto-load when you
+                      switch projects.
+                    </TextBlock>
+                  </Border>
+                </StackPanel>
+              </ScrollViewer>
+            </TabItem>
 
-                                <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                                    <Button x:Name="MainPullBranchButton" Content="Pull Branch" Style="{StaticResource CmdButton}" Click="MainPullBranch_Click"
-                                            ToolTip="Fetch + checkout + fast-forward pull into the LOCAL project folder"/>
-                                </StackPanel>
+            <!-- ISSUES -->
+            <TabItem Header="Issues">
+              <Grid Margin="8" RowDefinitions="Auto,*">
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,6" Spacing="6">
+                  <TextBlock Text="State:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                  <ComboBox x:Name="IssueStateCombo" Width="100" SelectedIndex="0">
+                    <ComboBoxItem Content="open"/>
+                    <ComboBoxItem Content="closed"/>
+                    <ComboBoxItem Content="all"/>
+                  </ComboBox>
+                  <Button Classes="cmd" Content="Pull Issues" Click="PullIssues_Click"/>
+                  <TextBlock x:Name="IssueCountLabel" Classes="hint" VerticalAlignment="Center" Margin="12,0,0,0"/>
+                </StackPanel>
+                <Grid Grid.Row="1" ColumnDefinitions="*,4,*">
+                  <DataGrid x:Name="IssuesGrid" SelectionChanged="IssuesGrid_SelectionChanged">
+                    <DataGrid.Columns>
+                      <DataGridTextColumn Header="#" Binding="{Binding Number}" Width="55"/>
+                      <DataGridTextColumn Header="Title" Binding="{Binding Title}" Width="*"/>
+                      <DataGridTextColumn Header="State" Binding="{Binding State}" Width="60"/>
+                      <DataGridTextColumn Header="Labels" Binding="{Binding LabelsSummary}" Width="110"/>
+                      <DataGridTextColumn Header="Date" Binding="{Binding CreatedDisplay}" Width="110"/>
+                    </DataGrid.Columns>
+                  </DataGrid>
+                  <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"/>
+                  <ScrollViewer Grid.Column="2">
+                    <StackPanel Margin="10,4">
+                      <TextBlock x:Name="IssueDetailHeader" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+                      <TextBlock x:Name="IssueDetailMeta" Classes="hint" Margin="0,4,0,8"/>
+                      <TextBox x:Name="IssueDetailBody" IsReadOnly="True" TextWrapping="Wrap"
+                               MaxHeight="200" AcceptsReturn="True" Background="#11111b"
+                               Foreground="#a6adc8" FontSize="12"/>
+                      <TextBlock x:Name="IssueCommentHeader" Text="Comments" FontWeight="Bold"
+                                 Foreground="#a6adc8" Margin="0,12,0,4"/>
+                      <ItemsControl x:Name="IssueCommentsPanel">
+                        <ItemsControl.ItemTemplate>
+                          <DataTemplate>
+                            <Border Background="#181825" CornerRadius="4" Padding="8,6" Margin="0,0,0,4"
+                                    BorderBrush="#313244" BorderThickness="1">
+                              <StackPanel>
+                                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" FontSize="11"
+                                           Foreground="#89b4fa"/>
+                                <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4,0,0"/>
+                              </StackPanel>
+                            </Border>
+                          </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                      </ItemsControl>
+                      <Separator/>
+                      <TextBlock Text="Add Comment:" FontWeight="Bold" Foreground="#a6adc8" Margin="0,0,0,4"/>
+                      <TextBox x:Name="NewCommentBox" TextWrapping="Wrap" AcceptsReturn="True"
+                               Height="70" VerticalContentAlignment="Top"/>
+                      <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
+                        <Button Classes="cmd" Content="Add Comment" Click="AddComment_Click"/>
+                        <Button Classes="cmd danger" Content="Close Issue" Click="CloseIssue_Click"/>
+                        <Button Classes="cmd success" Content="Reopen Issue" Click="ReopenIssue_Click"/>
+                      </StackPanel>
+                    </StackPanel>
+                  </ScrollViewer>
+                </Grid>
+              </Grid>
+            </TabItem>
 
-                                <!-- Explanation -->
-                                <Border Background="#181825" CornerRadius="6" Padding="10,8" Margin="0,16,0,0">
-                                    <TextBlock TextWrapping="Wrap" Foreground="#6c7086" FontSize="12">
-                                        <Run FontWeight="Bold" Foreground="#f9e2af">How it works:</Run>
-                                        <LineBreak/>
-                                        All build, test, and deploy operations run against the
-                                        <Run FontWeight="Bold" Foreground="#cdd6f4">local project path</Run>
-                                        selected in the top bar.
-                                        <LineBreak/><LineBreak/>
-                                        "Pull Branch" updates the local checkout to match a remote branch.
-                                        Use it before building if you want to test a specific branch.
-                                        <LineBreak/><LineBreak/>
-                                        Firebase and signing credentials are saved per-project and auto-load
-                                        when you switch projects.
-                                    </TextBlock>
-                                </Border>
-                            </StackPanel>
-                        </ScrollViewer>
-                    </TabItem>
+            <!-- REPORTS -->
+            <TabItem Header="Reports">
+              <DockPanel Margin="8">
+                <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
+                  <Button Classes="cmd" Content="Refresh" Click="RefreshReports_Click"/>
+                  <Button Classes="cmd" Content="Open Log" Click="OpenSelectedLog_Click"/>
+                  <Button Classes="cmd" Content="Reports Folder" Click="OpenReports_Click"/>
+                  <Button Classes="cmd" Content="Logs Folder" Click="OpenLogs_Click"/>
+                </StackPanel>
+                <Grid RowDefinitions="Auto,*,Auto,140">
+                  <Border Grid.Row="0" Background="#181825" CornerRadius="4" Padding="12,6" Margin="0,0,0,6">
+                    <TextBlock x:Name="ReportsSummaryLabel" FontSize="13" Foreground="#a6adc8"/>
+                  </Border>
+                  <DataGrid Grid.Row="1" x:Name="ReportsGrid" SelectionChanged="ReportsGrid_SelectionChanged">
+                    <DataGrid.Columns>
+                      <DataGridTextColumn Header="Date" Binding="{Binding TimestampDisplay}" Width="140"/>
+                      <DataGridTextColumn Header="Project" Binding="{Binding ProjectName}" Width="110"/>
+                      <DataGridTextColumn Header="Variant" Binding="{Binding Variant}" Width="90"/>
+                      <DataGridTextColumn Header="Branch" Binding="{Binding Branch}" Width="90"/>
+                      <DataGridTextColumn Header="Result" Binding="{Binding Result}" Width="70"/>
+                      <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="*"/>
+                    </DataGrid.Columns>
+                  </DataGrid>
+                  <TextBlock Grid.Row="2" Text="Test failures for selected run:" FontWeight="Bold"
+                             Foreground="#f38ba8" Margin="0,8,0,4"/>
+                  <DataGrid Grid.Row="3" x:Name="FailuresGrid">
+                    <DataGrid.Columns>
+                      <DataGridTextColumn Header="Type" Binding="{Binding TestType}" Width="90"/>
+                      <DataGridTextColumn Header="Class" Binding="{Binding ClassName}" Width="*"/>
+                      <DataGridTextColumn Header="Test" Binding="{Binding TestName}" Width="*"/>
+                      <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
+                    </DataGrid.Columns>
+                  </DataGrid>
+                </Grid>
+              </DockPanel>
+            </TabItem>
+          </TabControl>
 
-                    <!-- ╌╌ ISSUES TAB ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ -->
-                    <TabItem Header="Issues" Style="{StaticResource DarkTabItem}">
-                        <Grid Margin="8">
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <TextBlock Text="State:" Foreground="#a6adc8" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                                <ComboBox x:Name="IssueStateCombo" Width="90" Style="{StaticResource DarkComboBox}">
-                                    <ComboBoxItem Content="open" IsSelected="True"/>
-                                    <ComboBoxItem Content="closed"/>
-                                    <ComboBoxItem Content="all"/>
-                                </ComboBox>
-                                <Button Content="Pull Issues" Style="{StaticResource CmdButton}" Click="PullIssues_Click"/>
-                                <TextBlock x:Name="IssueCountLabel" Foreground="#6c7086" FontSize="12" VerticalAlignment="Center" Margin="12,0,0,0"/>
-                            </StackPanel>
+          <GridSplitter Grid.Row="1" Height="4" ResizeDirection="Rows"/>
 
-                            <Grid Grid.Row="1">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                </Grid.ColumnDefinitions>
-
-                                <DataGrid Grid.Column="0" x:Name="IssuesGrid"
-                                          Style="{StaticResource DarkDataGrid}"
-                                          SelectionChanged="IssuesGrid_SelectionChanged">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="#"      Binding="{Binding Number}" Width="50"/>
-                                        <DataGridTextColumn Header="Title"  Binding="{Binding Title}"  Width="*"/>
-                                        <DataGridTextColumn Header="State"  Binding="{Binding State}"  Width="55"/>
-                                        <DataGridTextColumn Header="Labels" Binding="{Binding LabelsSummary}" Width="110"/>
-                                        <DataGridTextColumn Header="Date"   Binding="{Binding CreatedDisplay}" Width="110"/>
-                                    </DataGrid.Columns>
-                                </DataGrid>
-
-                                <GridSplitter Grid.Column="1" Width="4" Background="#313244" HorizontalAlignment="Center" VerticalAlignment="Stretch"/>
-
-                                <ScrollViewer Grid.Column="2" VerticalScrollBarVisibility="Auto">
-                                    <StackPanel Margin="10,4">
-                                        <TextBlock x:Name="IssueDetailHeader" FontWeight="Bold" FontSize="14" Foreground="#cdd6f4" TextWrapping="Wrap"/>
-                                        <TextBlock x:Name="IssueDetailMeta" FontSize="12" Foreground="#6c7086" Margin="0,4,0,8" TextWrapping="Wrap"/>
-                                        <TextBox x:Name="IssueDetailBody" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="200"
-                                                 VerticalScrollBarVisibility="Auto" Background="#11111b" Foreground="#a6adc8"
-                                                 BorderBrush="#313244" Padding="6" FontSize="12"/>
-                                        <TextBlock x:Name="IssueCommentHeader" Text="Comments" FontWeight="Bold" Foreground="#a6adc8" Margin="0,12,0,4"/>
-                                        <ItemsControl x:Name="IssueCommentsPanel">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Background="#181825" CornerRadius="4" Padding="8,6" Margin="0,0,0,4" BorderBrush="#313244" BorderThickness="1">
-                                                        <StackPanel>
-                                                            <TextBlock Text="{Binding Header}" FontWeight="SemiBold" FontSize="11" Foreground="#89b4fa"/>
-                                                            <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Foreground="#cdd6f4" Margin="0,4,0,0"/>
-                                                        </StackPanel>
-                                                    </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                        <Separator Background="#313244" Margin="0,10"/>
-                                        <TextBlock Text="Add Comment:" FontWeight="Bold" Foreground="#a6adc8" Margin="0,0,0,4"/>
-                                        <TextBox x:Name="NewCommentBox" Style="{StaticResource DarkTextBox}" TextWrapping="Wrap" AcceptsReturn="True" Height="70" VerticalContentAlignment="Top"/>
-                                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                                            <Button Content="Add Comment"  Style="{StaticResource CmdButton}" Click="AddComment_Click"/>
-                                            <Button Content="Close Issue"  Style="{StaticResource CmdButton}" Click="CloseIssue_Click" Background="#e64553" Foreground="White"/>
-                                            <Button Content="Reopen Issue" Style="{StaticResource CmdButton}" Click="ReopenIssue_Click" Background="#40a02b" Foreground="White"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </ScrollViewer>
-                            </Grid>
-                        </Grid>
-                    </TabItem>
-
-                    <!-- ╌╌ REPORTS TAB ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌ -->
-                    <TabItem Header="Reports" Style="{StaticResource DarkTabItem}">
-                        <DockPanel Margin="8">
-                            <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
-                                <Button Content="Refresh"        Style="{StaticResource CmdButton}" Click="RefreshReports_Click"/>
-                                <Button Content="Open Log"       Style="{StaticResource CmdButton}" Click="OpenSelectedLog_Click"/>
-                                <Button Content="Reports Folder" Style="{StaticResource CmdButton}" Click="OpenReports_Click"/>
-                            </StackPanel>
-                            <Grid>
-                                <Grid.RowDefinitions>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="*"/>
-                                    <RowDefinition Height="Auto"/>
-                                    <RowDefinition Height="140"/>
-                                </Grid.RowDefinitions>
-                                <Border Grid.Row="0" Background="#181825" CornerRadius="4" Padding="12,6" Margin="0,0,0,6">
-                                    <TextBlock x:Name="ReportsSummaryLabel" FontSize="13" Foreground="#a6adc8"/>
-                                </Border>
-                                <DataGrid Grid.Row="1" x:Name="ReportsGrid" Style="{StaticResource DarkDataGrid}" SelectionChanged="ReportsGrid_SelectionChanged">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Date"    Binding="{Binding TimestampDisplay}" Width="120"/>
-                                        <DataGridTextColumn Header="Project" Binding="{Binding ProjectName}" Width="100"/>
-                                        <DataGridTextColumn Header="Variant" Binding="{Binding Variant}" Width="80"/>
-                                        <DataGridTextColumn Header="Branch"  Binding="{Binding Branch}" Width="80"/>
-                                        <DataGridTextColumn Header="Result"  Binding="{Binding Result}" Width="60"/>
-                                        <DataGridTextColumn Header="Status"  Binding="{Binding Status}" Width="*"/>
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                                <TextBlock Grid.Row="2" Text="Test Failures for Selected:" FontWeight="Bold" Foreground="#e64553" Margin="0,8,0,4"/>
-                                <DataGrid Grid.Row="3" x:Name="FailuresGrid" Style="{StaticResource DarkDataGrid}">
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Header="Type"    Binding="{Binding TestType}" Width="70"/>
-                                        <DataGridTextColumn Header="Class"   Binding="{Binding ClassName}" Width="*"/>
-                                        <DataGridTextColumn Header="Test"    Binding="{Binding TestName}" Width="*"/>
-                                        <DataGridTextColumn Header="Message" Binding="{Binding Message}" Width="*"/>
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                            </Grid>
-                        </DockPanel>
-                    </TabItem>
-                </TabControl>
-
-                <GridSplitter Grid.Row="1" Height="4" Background="#313244" HorizontalAlignment="Stretch" VerticalAlignment="Center"/>
-
-                <Border Grid.Row="2" Margin="4" BorderBrush="#45475a" BorderThickness="1" CornerRadius="4">
-                    <TextBox x:Name="LogBox" IsReadOnly="True"
-                             VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                             FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
-                             Background="#11111b" Foreground="#a6adc8" BorderThickness="0" Padding="8"/>
-                </Border>
-            </Grid>
+          <Border Grid.Row="2" Margin="4" BorderBrush="#45475a" BorderThickness="1" CornerRadius="4">
+            <TextBox x:Name="LogBox" Classes="log"
+                     ScrollViewer.VerticalScrollBarVisibility="Auto"
+                     ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
+          </Border>
         </Grid>
+      </Grid>
     </DockPanel>
+
+    <!-- Toasts float above the whole window -->
+    <ui:ToastHost x:Name="Toasts"/>
+  </Panel>
 </Window>

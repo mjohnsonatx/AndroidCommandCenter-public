@@ -1,36 +1,27 @@
-﻿<Window x:Class="AndroidCommandCenter.TestFailureDialog"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Test Failure" Height="500" Width="660"
-        Background="#1e1e2e" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/Dark.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
+        x:Class="AndroidCommandCenter.TestFailureDialog"
+        Title="Test Failure" Width="700" Height="540"
+        WindowStartupLocation="CenterOwner">
     <DockPanel Margin="16">
-        <TextBlock x:Name="TitleText" DockPanel.Dock="Top" FontWeight="Bold"
-                   Foreground="#e64553" FontSize="16" Margin="0,0,0,8" />
-
-        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
-            <CheckBox x:Name="ConfirmCheck" Visibility="Collapsed"
-                      Content="I understand the failure and want to proceed anyway"
-                      Foreground="#f9e2af" FontSize="13" Margin="0,0,0,8"
-                      Checked="Confirm_Changed" Unchecked="Confirm_Changed" />
-            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                <Button x:Name="ContinueBtn" Content="Continue" Style="{StaticResource CmdButton}"
-                        Click="Continue_Click" Background="#40a02b" Foreground="White" Padding="18,6" />
-                <Button Content="Stop Pipeline" Style="{StaticResource CmdButton}"
-                        Click="Stop_Click" Background="#e64553" Foreground="White" Padding="18,6" />
-            </StackPanel>
+        <StackPanel DockPanel.Dock="Top" Margin="0,0,0,8">
+            <TextBlock x:Name="TitleText" FontWeight="Bold" Foreground="#f38ba8" FontSize="16"/>
+            <TextBlock x:Name="CountText" Classes="hint" Margin="0,4,0,0"/>
         </StackPanel>
-
-        <TextBox x:Name="DetailsBox" IsReadOnly="True"
-                 VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
-                 FontFamily="Consolas" FontSize="12" TextWrapping="NoWrap"
-                 Background="#11111b" Foreground="#a6adc8" BorderThickness="1" BorderBrush="#45475a"
-                 Padding="8" />
+        <StackPanel DockPanel.Dock="Bottom" Margin="0,10,0,0">
+            <CheckBox x:Name="ConfirmCheck" IsVisible="False" Foreground="#f9e2af"
+                      Content="I understand the failure and want to proceed anyway"
+                      IsCheckedChanged="Confirm_Changed"/>
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="0,8,0,0">
+                <Button Grid.Column="0" Classes="cmd" Content="Copy details" Click="Copy_Click"/>
+                <Button Grid.Column="2" x:Name="ContinueBtn" Classes="cmd success"
+                        Content="Continue anyway" Click="Continue_Click"/>
+                <Button Grid.Column="3" Classes="cmd danger" Content="Stop Pipeline" Click="Stop_Click"/>
+            </Grid>
+        </StackPanel>
+        <TextBox x:Name="DetailsBox" Classes="log"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto"
+                 ScrollViewer.HorizontalScrollBarVisibility="Auto"
+                 BorderThickness="1" BorderBrush="#45475a"/>
     </DockPanel>
 </Window>

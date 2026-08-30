@@ -1,60 +1,67 @@
-﻿<Window x:Class="AndroidCommandCenter.BuildSignedApkWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="Build Signed APK" Height="600" Width="580"
-        Background="#1e1e2e" WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ResourceDictionary>
-            <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="/Themes/Dark.xaml" />
-            </ResourceDictionary.MergedDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-    <DockPanel>
-        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal"
-                    HorizontalAlignment="Right" Margin="16,8,16,12">
-            <Button x:Name="GenerateBtn" Content="Generate Signed APK" Style="{StaticResource CmdButton}"
-                    Click="Generate_Click" Background="#40a02b" Foreground="White" FontWeight="Bold" Padding="20,6" />
-            <Button Content="Cancel" Style="{StaticResource CmdButton}" Click="Cancel_Click" Padding="20,6" />
-        </StackPanel>
-        <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="16,12">
-            <StackPanel>
-                <TextBlock Text="SIGNING" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,8" />
+        xmlns:ui="using:AndroidCommandCenter.UI"
+        x:Class="AndroidCommandCenter.BuildSignedApkWindow"
+        Title="Build Signed APK" Width="600" Height="620"
+        WindowStartupLocation="CenterOwner">
+  <DockPanel>
+    <Border DockPanel.Dock="Bottom" Padding="16,8,16,12">
+      <Grid ColumnDefinitions="*,Auto,Auto">
+        <TextBlock x:Name="SummaryText" Classes="field-error" VerticalAlignment="Center" IsVisible="False"/>
+        <Button Grid.Column="1" x:Name="GenerateBtn" Classes="cmd success"
+                Content="Generate Signed APK" Click="Generate_Click"/>
+        <Button Grid.Column="2" Classes="cmd" Content="Cancel" Click="Cancel_Click" Padding="20,6"/>
+      </Grid>
+    </Border>
+    <ScrollViewer Padding="16,12">
+      <StackPanel>
+        <TextBlock Classes="section" Text="SIGNING" Foreground="#89b4fa"/>
 
-                <TextBlock Text="Keystore file (.jks):" Foreground="#a6adc8" Margin="0,4" />
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <TextBox x:Name="KeystoreBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
-                    <Button Grid.Column="1" Content="Browse" Style="{StaticResource CmdButton}" Click="BrowseKeystore_Click" />
-                </Grid>
+        <TextBlock Classes="label" Text="Keystore file (.jks):"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="KeystoreBox" TextChanged="Field_Changed"/>
+          <Button Grid.Column="1" Classes="cmd" Content="Browse…" Click="BrowseKeystore_Click"/>
+        </Grid>
+        <TextBlock x:Name="KeystoreErr" Classes="field-error" IsVisible="False"/>
 
-                <TextBlock Text="Keystore password:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <PasswordBox x:Name="StorePassBox" Background="#313244" Foreground="#cdd6f4"
-                             BorderBrush="#45475a" Padding="6,4" FontSize="13" PasswordChanged="Pass_Changed" />
+        <TextBlock Classes="label" Text="Keystore password:"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="StorePassBox" PasswordChar="●" TextChanged="Field_Changed"/>
+          <ToggleButton Grid.Column="1" x:Name="RevealToggle" Classes="cmd" Content="👁"
+                        IsCheckedChanged="Reveal_Changed" ToolTip.Tip="Show/hide passwords"/>
+        </Grid>
+        <TextBlock x:Name="StorePassErr" Classes="field-error" IsVisible="False"/>
 
-                <TextBlock Text="Key alias:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <TextBox x:Name="KeyAliasBox" Style="{StaticResource DarkTextBox}" TextChanged="Field_Changed" />
+        <TextBlock Classes="label" Text="Key alias:"/>
+        <Grid ColumnDefinitions="*,Auto">
+          <TextBox x:Name="KeyAliasBox" TextChanged="Field_Changed"/>
+          <Button Grid.Column="1" x:Name="VerifyBtn" Classes="cmd" Content="Verify keystore"
+                  Click="Verify_Click" ToolTip.Tip="Runs keytool to confirm the password and alias"/>
+        </Grid>
+        <TextBlock x:Name="KeyAliasErr" Classes="field-error" IsVisible="False"/>
 
-                <TextBlock Text="Key password:" Foreground="#a6adc8" Margin="0,8,0,4" />
-                <PasswordBox x:Name="KeyPassBox" Background="#313244" Foreground="#cdd6f4"
-                             BorderBrush="#45475a" Padding="6,4" FontSize="13" PasswordChanged="Pass_Changed" />
+        <TextBlock Classes="label" Text="Key password:"/>
+        <TextBox x:Name="KeyPassBox" PasswordChar="●" TextChanged="Field_Changed"/>
+        <TextBlock x:Name="KeyPassErr" Classes="field-error" IsVisible="False"/>
+        <TextBlock x:Name="VerifyInfo" Classes="hint" Margin="2,6,0,0" TextWrapping="Wrap"/>
 
-                <Border BorderBrush="#45475a" BorderThickness="0,1,0,0" Margin="0,14,0,8" />
-                <TextBlock Text="VARIANTS TO BUILD" FontWeight="Bold" Foreground="#89b4fa" FontSize="14" Margin="0,0,0,6" />
-                <TextBlock Text="Select one or more (usually the release variants):" Foreground="#a6adc8" Margin="0,0,0,6" />
-                <ItemsControl x:Name="VariantList">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"
-                                      Foreground="#cdd6f4" FontSize="13" Margin="0,3"
-                                      Checked="Variant_Changed" Unchecked="Variant_Changed" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </StackPanel>
-        </ScrollViewer>
-    </DockPanel>
+        <Border Classes="hr"/>
+        <TextBlock Classes="section" Text="VARIANTS TO BUILD" Foreground="#89b4fa"/>
+        <TextBlock Classes="hint" Text="Usually the release variant(s). Each selected variant is built and signed with the keystore above."/>
+        <ItemsControl x:Name="VariantList" Margin="0,6,0,0">
+          <ItemsControl.ItemTemplate>
+            <DataTemplate x:DataType="ui:VariantChoice">
+              <CheckBox Content="{Binding Name}" IsChecked="{Binding IsSelected, Mode=TwoWay}"/>
+            </DataTemplate>
+          </ItemsControl.ItemTemplate>
+        </ItemsControl>
+        <TextBlock x:Name="VariantErr" Classes="field-error" IsVisible="False"/>
+
+        <Border Classes="card" Margin="0,14,0,0">
+          <TextBlock Classes="hint" TextWrapping="Wrap" Foreground="#f9e2af"
+                     Text="These credentials override the signing config of every build type. Only use the output for distribution — installing a differently-signed APK over an existing install forces an uninstall and wipes app data."/>
+        </Border>
+      </StackPanel>
+    </ScrollViewer>
+  </DockPanel>
 </Window>

@@ -1,42 +1,45 @@
-﻿namespace AndroidCommandCenter.Models;
+﻿using System.IO;
 
-/// <summary>
-/// Per-project credential and config profile.
-/// Keyed by a normalized project path.
-/// </summary>
-public class ProjectProfile
+namespace AndroidCommandCenter.Models;
+
+public sealed class ProjectProfile
 {
     public string ProjectPath { get; set; } = "";
     public string DisplayName { get; set; } = "";
 
-    // GitHub source
     public string GitHubOwner { get; set; } = "";
     public string GitHubRepo { get; set; } = "";
-    public string GitHubToken { get; set; } = "";
     public string DefaultRemote { get; set; } = "origin";
-    public string DefaultBranch { get; set; } = "master";
+    public string DefaultBranch { get; set; } = "main";
 
-    // Firebase
     public string FirebaseAppId { get; set; } = "";
     public string FirebaseCredentialsJson { get; set; } = "";
     public string FirebaseCliPath { get; set; } = "firebase";
 
-    // Signing
     public string KeystorePath { get; set; } = "";
     public string KeyAlias { get; set; } = "";
-    public string StorePassword { get; set; } = "";
-    public string KeyPassword { get; set; } = "";
 
-    /// <summary>Stable key for lookups — normalized lowercase path.</summary>
-    public string Key => ProjectPath.Replace('/', '\\').TrimEnd('\\').ToLowerInvariant();
+    /// <summary>
+    /// Stable lookup key and secret namespace. The old version did
+    /// Replace('/','\\') + ToLowerInvariant(), which on a case-sensitive Linux
+    /// filesystem merges genuinely distinct paths (~/Work and ~/work) and
+    /// mangles every separator. Normalise properly and keep case.
+    /// </summary>
+    public string Key => NormalizeKey(ProjectPath);
+
+    public static string NormalizeKey(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return "";
+        try { path = Path.GetFullPath(path); } catch { }
+        path = path.Replace('\\', '/').TrimEnd('/');
+        return Platform.IsWindows ? path.ToLowerInvariant() : path;
+    }
 
     public bool HasFirebase =>
         !string.IsNullOrWhiteSpace(FirebaseAppId) &&
         !string.IsNullOrWhiteSpace(FirebaseCredentialsJson);
 
-    public bool HasSigning =>
-        !string.IsNullOrWhiteSpace(KeystorePath) &&
-        !string.IsNullOrWhiteSpace(KeyAlias) &&
-        !string.IsNullOrWhiteSpace(StorePassword) &&
-        !string.IsNullOrWhiteSpace(KeyPassword);
+    /// <summary>Signing needs a secret lookup, so the service decides this.</summary>
+    public bool HasSigningPaths =>
+        !string.IsNullOrWhiteSpace(KeystorePath) && !string.IsNullOrWhiteSpace(KeyAlias);
 }
