@@ -18,10 +18,11 @@ public class PipelineLogger
         }
     }
 
-    public PipelineLogger(string prefix, string projectName)
+    public PipelineLogger(string prefix, string projectName, string? directory = null)
     {
+        string dir = directory ?? Paths.PipelineLogs;
         string ts = DateTime.Now.ToString("yyyy-MM-dd_HHmmss");
-        FilePath = Path.Combine(LogsDirectory, $"{prefix}_{projectName.Replace(" ", "")}_{ts}.txt");
+        FilePath = Path.Combine(dir, $"{prefix}_{projectName.Replace(" ", "")}_{ts}.txt");
 
         _sb.AppendLine("========================================");
         _sb.AppendLine($"  {prefix} PIPELINE LOG");
