@@ -2,65 +2,69 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="using:AndroidCommandCenter.UI"
         x:Class="AndroidCommandCenter.MainWindow"
-        Title="Android Command Center" Width="1240" Height="900"
+        Title="Android Command Center" Width="1380" Height="900"
+        MinWidth="1080" MinHeight="720"
         WindowStartupLocation="CenterScreen">
   <!-- Panel, not Grid, so the toast host floats above everything -->
   <Panel>
     <DockPanel>
       <!-- ═══ TOP BAR ═══ -->
-      <Border DockPanel.Dock="Top" Background="#181825" Padding="10,6">
-        <StackPanel Spacing="6">
-          <Grid ColumnDefinitions="Auto,200,Auto,20,Auto,170,Auto,20,Auto,150,Auto,*">
-            <TextBlock Grid.Column="0" Text="Project:" Foreground="#a6adc8" FontWeight="Bold"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox Grid.Column="1" x:Name="ProjectCombo" SelectionChanged="ProjectCombo_SelectionChanged"/>
-            <StackPanel Grid.Column="2" Orientation="Horizontal">
-              <Button Classes="cmd" Content="+" Width="30" Click="AddProject_Click" ToolTip.Tip="Add project folder"/>
-              <Button Classes="cmd" Content="−" Width="30" Click="RemoveProject_Click" ToolTip.Tip="Remove from list"/>
-            </StackPanel>
-            <TextBlock Grid.Column="4" Text="Variant:" Foreground="#a6adc8" FontWeight="Bold"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox Grid.Column="5" x:Name="VariantCombo" SelectionChanged="VariantCombo_SelectionChanged"/>
-            <Button Grid.Column="6" Classes="cmd" Content="Detect" Click="DetectVariants_Click"/>
-            <TextBlock Grid.Column="8" Text="AVD:" Foreground="#a6adc8" FontWeight="Bold"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox Grid.Column="9" x:Name="AvdCombo" SelectionChanged="AvdCombo_SelectionChanged"/>
-            <Button Grid.Column="10" Classes="cmd" Content="↻" Width="30" Click="RefreshAvds_Click"/>
+      <Border DockPanel.Dock="Top" Background="{StaticResource MantleBrush}" Padding="12,8">
+        <StackPanel Spacing="8">
+          <Grid ColumnDefinitions="*,Auto">
+            <WrapPanel Grid.Column="0" VerticalAlignment="Center">
+              <StackPanel Orientation="Horizontal" Margin="0,0,18,0">
+                <TextBlock Text="Project" Classes="toolbar-label"/>
+                <ComboBox x:Name="ProjectCombo" Width="260"
+                          SelectionChanged="ProjectCombo_SelectionChanged"/>
+                <Button Classes="cmd compact" Content="+" Width="30" Click="AddProject_Click"
+                        ToolTip.Tip="Add project folder"/>
+                <Button Classes="cmd compact" Content="−" Width="30" Click="RemoveProject_Click"
+                        ToolTip.Tip="Remove from list"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal" Margin="0,0,18,0">
+                <TextBlock Text="Variant" Classes="toolbar-label"/>
+                <ComboBox x:Name="VariantCombo" Width="180"
+                          SelectionChanged="VariantCombo_SelectionChanged"/>
+                <Button Classes="cmd compact" Content="Detect" Click="DetectVariants_Click"/>
+              </StackPanel>
+              <StackPanel Orientation="Horizontal">
+                <TextBlock Text="AVD" Classes="toolbar-label"/>
+                <ComboBox x:Name="AvdCombo" Width="180"
+                          SelectionChanged="AvdCombo_SelectionChanged"/>
+                <Button Classes="cmd compact" Content="↻" Width="30" Click="RefreshAvds_Click"/>
+              </StackPanel>
+            </WrapPanel>
+            <Border Grid.Column="1" Classes="status-pill">
+              <StackPanel Orientation="Horizontal" Spacing="7">
+                <ProgressBar x:Name="BusySpinner" IsIndeterminate="True" IsVisible="False"
+                             Width="54" Height="4" VerticalAlignment="Center"/>
+                <TextBlock Text="STATUS" Classes="toolbar-label" Margin="0"/>
+                <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="{StaticResource GreenBrush}"
+                           FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+              </StackPanel>
+            </Border>
           </Grid>
 
-          <Grid ColumnDefinitions="Auto,130,16,Auto,130,24,Auto,24,Auto,200,16,Auto,*,Auto">
-            <TextBlock Grid.Column="0" Text="CPU" Foreground="#6c7086" FontSize="12"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <Panel Grid.Column="1">
-              <ProgressBar x:Name="CpuBar" Classes="dash" Maximum="100" Foreground="#89b4fa"/>
-              <TextBlock x:Name="CpuLabel" Text="—" FontSize="10" FontWeight="Bold" Foreground="#11111b"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Panel>
-            <TextBlock Grid.Column="3" Text="RAM" Foreground="#6c7086" FontSize="12"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <Panel Grid.Column="4">
-              <ProgressBar x:Name="MemBar" Classes="dash" Maximum="100" Foreground="#a6e3a1"/>
-              <TextBlock x:Name="MemLabel" Text="—" FontSize="10" FontWeight="Bold" Foreground="#11111b"
-                         HorizontalAlignment="Center" VerticalAlignment="Center"/>
-            </Panel>
-            <StackPanel Grid.Column="6" Orientation="Horizontal" VerticalAlignment="Center">
-              <TextBlock Text="Java:" Foreground="#a6adc8" FontSize="12"/>
-              <TextBlock x:Name="DaemonLabel" Text="0" Foreground="#f9e2af" FontWeight="Bold"
-                         FontSize="12" Margin="4,0,0,0"/>
+          <Grid ColumnDefinitions="Auto,110,44,18,Auto,130,92,22,Auto,Auto,24,Auto,210,*">
+            <TextBlock Text="CPU" Classes="metric-label"/>
+            <ProgressBar Grid.Column="1" x:Name="CpuBar" Classes="dash" Maximum="100" Foreground="{StaticResource BlueBrush}"/>
+            <TextBlock Grid.Column="2" x:Name="CpuLabel" Text="—" Classes="metric-value"/>
+            <TextBlock Grid.Column="4" Text="RAM" Classes="metric-label"/>
+            <ProgressBar Grid.Column="5" x:Name="MemBar" Classes="dash" Maximum="100" Foreground="{StaticResource GreenBrush}"/>
+            <TextBlock Grid.Column="6" x:Name="MemLabel" Text="—" Classes="metric-value"/>
+            <StackPanel Grid.Column="8" Orientation="Horizontal" VerticalAlignment="Center">
+              <TextBlock Text="Daemons" Classes="metric-label"/>
+              <TextBlock x:Name="DaemonLabel" Text="0" Foreground="{StaticResource YellowBrush}" FontWeight="Bold"
+                         FontSize="13" Margin="5,0,0,0"/>
             </StackPanel>
-            <TextBlock Grid.Column="8" Text="Target:" Foreground="#a6adc8" FontSize="12"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <ComboBox Grid.Column="9" x:Name="DeviceCombo" SelectionChanged="DeviceCombo_SelectionChanged"/>
-            <TextBlock Grid.Column="11" Text="Connected:" Foreground="#a6adc8" FontSize="12"
-                       VerticalAlignment="Center" Margin="0,0,6,0"/>
-            <TextBlock Grid.Column="12" x:Name="DeviceListLabel" Text="(scanning…)" FontSize="12"
-                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            <StackPanel Grid.Column="13" Orientation="Horizontal" VerticalAlignment="Center" Spacing="6">
-              <ProgressBar x:Name="BusySpinner" IsIndeterminate="True" IsVisible="False"
-                           Width="80" Height="4"/>
-              <TextBlock Text="Status:" Foreground="#a6adc8" FontSize="12"/>
-              <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="#a6e3a1"
-                         FontWeight="Bold" FontSize="12"/>
+            <TextBlock Grid.Column="9" Text="" Width="16"/>
+            <TextBlock Grid.Column="11" Text="Target" Classes="metric-label"/>
+            <ComboBox Grid.Column="12" x:Name="DeviceCombo" SelectionChanged="DeviceCombo_SelectionChanged"/>
+            <StackPanel Grid.Column="13" Orientation="Horizontal" Margin="18,0,0,0">
+              <TextBlock Text="Connected" Classes="metric-label"/>
+              <TextBlock x:Name="DeviceListLabel" Text="scanning…" FontSize="13"
+                         VerticalAlignment="Center" TextTrimming="CharacterEllipsis" Margin="7,0,0,0"/>
             </StackPanel>
           </Grid>
         </StackPanel>
@@ -81,15 +85,17 @@
           <TextBlock x:Name="CtxFirebaseLabel" Classes="ctx-value" Text="—"/>
           <TextBlock Classes="ctx-key" Text="Secrets:"/>
           <TextBlock x:Name="CtxSecretsLabel" Classes="ctx-value" Text="—"/>
+          <TextBlock Classes="ctx-key" Text="JDK:"/>
+          <TextBlock x:Name="CtxJdkLabel" Classes="ctx-value" Text="detecting…"/>
         </WrapPanel>
       </Border>
 
       <!-- ═══ BODY ═══ -->
-      <Grid ColumnDefinitions="220,4,*">
+      <Grid ColumnDefinitions="240,4,*">
         <!-- SIDEBAR -->
-        <Border Grid.Column="0" Background="#181825" BorderBrush="#313244" BorderThickness="0,0,1,0">
+        <Border Grid.Column="0" Background="{StaticResource MantleBrush}" BorderBrush="{StaticResource Surface0Brush}" BorderThickness="0,0,1,0">
           <DockPanel>
-            <Border DockPanel.Dock="Bottom" BorderBrush="#313244" BorderThickness="0,1,0,0" Padding="4,6">
+            <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Surface0Brush}" BorderThickness="0,1,0,0" Padding="4,6">
               <StackPanel>
                 <Button x:Name="CancelButton" Classes="nav danger" Content="⏹ Cancel" Click="Cancel_Click"
                         IsEnabled="False"/>
@@ -110,7 +116,7 @@
                   </StackPanel>
                 </Expander>
 
-                <Expander Classes="nav" Header="Tests" IsExpanded="True">
+                <Expander Classes="nav" Header="Tests">
                   <StackPanel>
                     <Button Classes="nav" Content="Unit Tests" Click="UnitTests_Click"/>
                     <Button Classes="nav" Content="Instrument Tests" Click="InstrumentTests_Click"
@@ -125,7 +131,7 @@
                     <TextBlock Classes="hint" Margin="4,0,4,6"
                                Text="Instrument tests wipe app data on the device they run on. When this list has entries, only these serials may be used (emulators always allowed). Empty = any device."/>
                     <ListBox x:Name="AuthorizedDevicesList" MinHeight="48" MaxHeight="96"
-                             FontSize="12" Margin="4,0,4,4"/>
+                             FontSize="13" Margin="4,0,4,4"/>
                     <TextBox x:Name="AuthorizedSerialBox" Margin="4,0,4,4"
                              Watermark="serial (blank = use Target)"/>
                     <Button Classes="nav" Content="Authorize Device" Click="AuthorizeDevice_Click"/>
@@ -133,7 +139,7 @@
                   </StackPanel>
                 </Expander>
 
-                <Expander Classes="nav" Header="Environment" IsExpanded="True">
+                <Expander Classes="nav" Header="Environment">
                   <StackPanel>
                     <Button Classes="nav" Content="List Devices" Click="Devices_Click"/>
                     <Button Classes="nav" Content="Start AVD" Click="StartAvd_Click"/>
@@ -194,69 +200,96 @@
           <TabControl Grid.Row="0">
             <!-- SOURCE -->
             <TabItem Header="Source">
-              <ScrollViewer Padding="12">
-                <StackPanel Margin="12" MaxWidth="720" HorizontalAlignment="Left">
-                  <TextBlock Classes="section" Text="GITHUB ACCOUNT" Foreground="#89b4fa"/>
-                  <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto">
-                    <TextBlock Text="Owner:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <TextBox Grid.Column="1" x:Name="MainGitHubOwnerBox" Margin="0,0,0,6"/>
-                    <TextBlock Grid.Row="1" Text="Token:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainGitHubTokenBox" PasswordChar="●"/>
-                  </Grid>
-                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button Classes="cmd" Content="Load Repos" Click="LoadRepos_Click"/>
-                    <Button Classes="cmd" Content="Save Credentials" Click="SaveCreds_Click"
-                            ToolTip.Tip="Stores the token in the system keyring"/>
-                    <Button Classes="cmd" Content="Load .env" Click="LoadFromEnv_Click"/>
-                    <Button Classes="cmd" Content="Save .env" Click="SaveToEnv_Click"/>
-                  </StackPanel>
-
-                  <Separator/>
-                  <TextBlock Classes="section" Text="REPOSITORY" Foreground="#89b4fa"/>
-                  <Grid ColumnDefinitions="80,*">
-                    <TextBlock Text="Repo:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Column="1" x:Name="MainGitHubRepoCombo"
-                              SelectionChanged="RepoCombo_SelectionChanged"/>
-                  </Grid>
-                  <TextBox x:Name="MainGitHubRepoBox" Margin="80,6,0,0"
-                           Watermark="or type a repository name"/>
-                  <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                    <Button x:Name="MainLoadBranchesButton" Classes="cmd" Content="Load Branches"
-                            Click="MainLoadBranches_Click"/>
-                  </StackPanel>
-
-                  <Separator/>
-                  <TextBlock Classes="section" Text="BRANCH" Foreground="#cba6f7"/>
-                  <Grid ColumnDefinitions="80,*" RowDefinitions="Auto,Auto,Auto">
-                    <TextBlock Text="Remote:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <TextBox Grid.Column="1" x:Name="MainGitRemoteBox" Margin="0,0,0,6"/>
-                    <TextBlock Grid.Row="1" Text="Name:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainBranchBox" Margin="0,0,0,6"/>
-                    <TextBlock Grid.Row="2" Text="Select:" Foreground="#a6adc8" VerticalAlignment="Center"/>
-                    <ComboBox Grid.Row="2" Grid.Column="1" x:Name="MainBranchCombo"
-                              SelectionChanged="MainBranchCombo_SelectionChanged"/>
-                  </Grid>
-                  <StackPanel Orientation="Horizontal" Margin="0,10,0,0">
-                    <Button x:Name="MainPullBranchButton" Classes="cmd" Content="Pull Branch"
-                            Click="MainPullBranch_Click"
-                            ToolTip.Tip="Fetch + checkout + fast-forward pull into the LOCAL project folder"/>
-                    <Button Classes="cmd" Content="Repo Status" Click="RepoStatus_Click"/>
-                  </StackPanel>
-
-                  <Border Classes="card" Margin="0,16,0,0">
-                    <TextBlock TextWrapping="Wrap" Foreground="#6c7086" FontSize="12">
-                      <Run FontWeight="Bold" Foreground="#f9e2af">How it works:</Run><LineBreak/>
-                      All build, test, and deploy operations run against the
-                      <Run FontWeight="Bold" Foreground="#cdd6f4">local project path</Run> selected in the top bar.
-                      <LineBreak/><LineBreak/>
-                      "Pull Branch" updates the local checkout to match a remote branch. Use it before
-                      building if you want to test a specific branch.
-                      <LineBreak/><LineBreak/>
-                      Credentials are stored per-project in the system keyring and auto-load when you
-                      switch projects.
-                    </TextBlock>
+              <ScrollViewer Padding="18">
+                <Grid MaxWidth="1180" HorizontalAlignment="Stretch" RowDefinitions="Auto,*">
+                  <Border Grid.Row="0" x:Name="NoProjectBanner" Classes="empty-banner" Margin="0,0,0,14">
+                    <Grid ColumnDefinitions="Auto,*">
+                      <TextBlock Text="＋" FontSize="28" Foreground="{StaticResource BlueBrush}" VerticalAlignment="Center"
+                                 Margin="0,0,12,0"/>
+                      <StackPanel Grid.Column="1">
+                        <TextBlock Text="Add an Android project to get started" FontWeight="Bold" FontSize="16"/>
+                        <TextBlock Classes="hint" Margin="0,3,0,0"
+                                   Text="Use the + button beside Project. The app will detect variants, Gradle's requested JDK, and saved repository settings."/>
+                      </StackPanel>
+                    </Grid>
                   </Border>
-                </StackPanel>
+
+                  <Grid Grid.Row="1" ColumnDefinitions="*,18,*">
+                    <StackPanel Grid.Column="0">
+                      <Border Classes="card panel-card" Margin="0,0,0,14">
+                        <StackPanel>
+                          <TextBlock Classes="section" Text="GITHUB ACCOUNT" Foreground="{StaticResource BlueBrush}"/>
+                          <TextBlock Classes="hint" Margin="0,0,0,10"
+                                     Text="Credentials are scoped to this project and stored in the system keyring."/>
+                          <Grid ColumnDefinitions="76,*" RowDefinitions="Auto,Auto">
+                            <TextBlock Text="Owner" Classes="form-label"/>
+                            <TextBox Grid.Column="1" x:Name="MainGitHubOwnerBox" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="1" Text="Token" Classes="form-label"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainGitHubTokenBox" PasswordChar="●"/>
+                          </Grid>
+                          <WrapPanel Margin="-4,8,0,0">
+                            <Button Classes="cmd" Content="Load Repos" Click="LoadRepos_Click"/>
+                            <Button Classes="cmd" Content="Save Credentials" Click="SaveCreds_Click"
+                                    ToolTip.Tip="Stores the token in the system keyring"/>
+                            <Button Classes="cmd" Content="Load .env" Click="LoadFromEnv_Click"/>
+                            <Button Classes="cmd" Content="Save .env" Click="SaveToEnv_Click"/>
+                          </WrapPanel>
+                        </StackPanel>
+                      </Border>
+
+                      <Border Classes="card panel-card">
+                        <StackPanel>
+                          <TextBlock Classes="section" Text="REPOSITORY" Foreground="{StaticResource BlueBrush}"/>
+                          <TextBlock Classes="label" Text="GitHub repository"/>
+                          <ComboBox x:Name="MainGitHubRepoCombo"
+                                    SelectionChanged="RepoCombo_SelectionChanged"/>
+                          <TextBox x:Name="MainGitHubRepoBox" Margin="0,7,0,0"
+                                   Watermark="or type a repository name"/>
+                          <StackPanel Orientation="Horizontal" Margin="-4,8,0,0">
+                            <Button x:Name="MainLoadBranchesButton" Classes="cmd" Content="Load Branches"
+                                    Click="MainLoadBranches_Click"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2">
+                      <Border Classes="card panel-card" Margin="0,0,0,14">
+                        <StackPanel>
+                          <TextBlock Classes="section" Text="BRANCH" Foreground="{StaticResource MauveBrush}"/>
+                          <TextBlock Classes="hint" Margin="0,0,0,10"
+                                     Text="Choose the local source branch used by interactive build and test actions."/>
+                          <Grid ColumnDefinitions="76,*" RowDefinitions="Auto,Auto,Auto">
+                            <TextBlock Text="Remote" Classes="form-label"/>
+                            <TextBox Grid.Column="1" x:Name="MainGitRemoteBox" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="1" Text="Name" Classes="form-label"/>
+                            <TextBox Grid.Row="1" Grid.Column="1" x:Name="MainBranchBox" Margin="0,0,0,8"/>
+                            <TextBlock Grid.Row="2" Text="Available" Classes="form-label"/>
+                            <ComboBox Grid.Row="2" Grid.Column="1" x:Name="MainBranchCombo"
+                                      SelectionChanged="MainBranchCombo_SelectionChanged"/>
+                          </Grid>
+                          <StackPanel Orientation="Horizontal" Margin="-4,8,0,0">
+                            <Button x:Name="MainPullBranchButton" Classes="cmd primary" Content="Pull Branch"
+                                    Click="MainPullBranch_Click"
+                                    ToolTip.Tip="Fetch + checkout + fast-forward pull into the local project folder"/>
+                            <Button Classes="cmd" Content="Repo Status" Click="RepoStatus_Click"/>
+                          </StackPanel>
+                        </StackPanel>
+                      </Border>
+
+                      <Border Classes="card panel-card">
+                        <StackPanel>
+                          <TextBlock Classes="section" Text="WORKSPACE BEHAVIOR" Foreground="{StaticResource YellowBrush}"/>
+                          <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Subtext0Brush}" FontSize="13"
+                                     Text="Interactive build and test actions use the project selected above. Pull Branch updates that checkout with a fast-forward-only pull. Promotion CI and rollback use isolated Git worktrees, so they never switch or reset your working branch."/>
+                          <Border Classes="hr"/>
+                          <TextBlock TextWrapping="Wrap" Foreground="{StaticResource Overlay0Brush}" FontSize="13"
+                                     Text="The selected project's Gradle daemon criteria choose the launcher JDK automatically. Required compile toolchains are advertised separately to Gradle."/>
+                        </StackPanel>
+                      </Border>
+                    </StackPanel>
+                  </Grid>
+                </Grid>
               </ScrollViewer>
             </TabItem>
 
@@ -264,7 +297,7 @@
             <TabItem Header="Issues">
               <Grid Margin="8" RowDefinitions="Auto,*">
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,6" Spacing="6">
-                  <TextBlock Text="State:" Foreground="#a6adc8" VerticalAlignment="Center"/>
+                  <TextBlock Text="State:" Foreground="{StaticResource Subtext0Brush}" VerticalAlignment="Center"/>
                   <ComboBox x:Name="IssueStateCombo" Width="100" SelectedIndex="0">
                     <ComboBoxItem Content="open"/>
                     <ComboBoxItem Content="closed"/>
@@ -286,21 +319,21 @@
                   <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"/>
                   <ScrollViewer Grid.Column="2">
                     <StackPanel Margin="10,4">
-                      <TextBlock x:Name="IssueDetailHeader" FontWeight="Bold" FontSize="14" TextWrapping="Wrap"/>
+                      <TextBlock x:Name="IssueDetailHeader" FontWeight="Bold" FontSize="15" TextWrapping="Wrap"/>
                       <TextBlock x:Name="IssueDetailMeta" Classes="hint" Margin="0,4,0,8"/>
                       <TextBox x:Name="IssueDetailBody" IsReadOnly="True" TextWrapping="Wrap"
-                               MaxHeight="200" AcceptsReturn="True" Background="#11111b"
-                               Foreground="#a6adc8" FontSize="12"/>
+                               MaxHeight="200" AcceptsReturn="True" Background="{StaticResource CrustBrush}"
+                               Foreground="{StaticResource Subtext0Brush}" FontSize="13"/>
                       <TextBlock x:Name="IssueCommentHeader" Text="Comments" FontWeight="Bold"
-                                 Foreground="#a6adc8" Margin="0,12,0,4"/>
+                                 Foreground="{StaticResource Subtext0Brush}" Margin="0,12,0,4"/>
                       <ItemsControl x:Name="IssueCommentsPanel">
                         <ItemsControl.ItemTemplate>
                           <DataTemplate>
-                            <Border Background="#181825" CornerRadius="4" Padding="8,6" Margin="0,0,0,4"
-                                    BorderBrush="#313244" BorderThickness="1">
+                            <Border Background="{StaticResource MantleBrush}" CornerRadius="4" Padding="8,6" Margin="0,0,0,4"
+                                    BorderBrush="{StaticResource Surface0Brush}" BorderThickness="1">
                               <StackPanel>
-                                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" FontSize="11"
-                                           Foreground="#89b4fa"/>
+                                <TextBlock Text="{Binding Header}" FontWeight="SemiBold" FontSize="12"
+                                           Foreground="{StaticResource BlueBrush}"/>
                                 <TextBlock Text="{Binding Body}" TextWrapping="Wrap" Margin="0,4,0,0"/>
                               </StackPanel>
                             </Border>
@@ -308,7 +341,7 @@
                         </ItemsControl.ItemTemplate>
                       </ItemsControl>
                       <Separator/>
-                      <TextBlock Text="Add Comment:" FontWeight="Bold" Foreground="#a6adc8" Margin="0,0,0,4"/>
+                      <TextBlock Text="Add Comment:" FontWeight="Bold" Foreground="{StaticResource Subtext0Brush}" Margin="0,0,0,4"/>
                       <TextBox x:Name="NewCommentBox" TextWrapping="Wrap" AcceptsReturn="True"
                                Height="70" VerticalContentAlignment="Top"/>
                       <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
@@ -332,8 +365,8 @@
                   <Button Classes="cmd" Content="Logs Folder" Click="OpenLogs_Click"/>
                 </StackPanel>
                 <Grid RowDefinitions="Auto,*,Auto,140">
-                  <Border Grid.Row="0" Background="#181825" CornerRadius="4" Padding="12,6" Margin="0,0,0,6">
-                    <TextBlock x:Name="ReportsSummaryLabel" FontSize="13" Foreground="#a6adc8"/>
+                  <Border Grid.Row="0" Background="{StaticResource MantleBrush}" CornerRadius="4" Padding="12,6" Margin="0,0,0,6">
+                    <TextBlock x:Name="ReportsSummaryLabel" FontSize="14" Foreground="{StaticResource Subtext0Brush}"/>
                   </Border>
                   <DataGrid Grid.Row="1" x:Name="ReportsGrid" SelectionChanged="ReportsGrid_SelectionChanged">
                     <DataGrid.Columns>
@@ -346,7 +379,7 @@
                     </DataGrid.Columns>
                   </DataGrid>
                   <TextBlock Grid.Row="2" Text="Test failures for selected run:" FontWeight="Bold"
-                             Foreground="#f38ba8" Margin="0,8,0,4"/>
+                             Foreground="{StaticResource RedBrush}" Margin="0,8,0,4"/>
                   <DataGrid Grid.Row="3" x:Name="FailuresGrid">
                     <DataGrid.Columns>
                       <DataGridTextColumn Header="Type" Binding="{Binding TestType}" Width="90"/>
@@ -362,7 +395,7 @@
 
           <GridSplitter Grid.Row="1" Height="4" ResizeDirection="Rows"/>
 
-          <Border Grid.Row="2" Margin="4" BorderBrush="#45475a" BorderThickness="1" CornerRadius="4">
+          <Border Grid.Row="2" Margin="4" BorderBrush="{StaticResource Surface1Brush}" BorderThickness="1" CornerRadius="4">
             <TextBox x:Name="LogBox" Classes="log"
                      ScrollViewer.VerticalScrollBarVisibility="Auto"
                      ScrollViewer.HorizontalScrollBarVisibility="Auto"/>

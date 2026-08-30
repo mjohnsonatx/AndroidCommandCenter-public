@@ -6,10 +6,24 @@ namespace AndroidCommandCenter.Services;
 public sealed class AndroidService
 {
     private readonly ProcessRunner _runner;
+    private string _projectPath = "";
+    private ProjectJavaEnvironment _javaEnvironment = JavaToolchainResolver.Resolve(null);
 
-    public string ProjectPath { get; set; } = "";
+    public string ProjectPath
+    {
+        get => _projectPath;
+        set
+        {
+            value ??= "";
+            if (string.Equals(_projectPath, value, StringComparison.Ordinal)) return;
+            _projectPath = value;
+            _javaEnvironment = JavaToolchainResolver.Resolve(value);
+            LogMessage?.Invoke($"[java] {_javaEnvironment.ShortDisplay} — {_javaEnvironment.SelectionReason}");
+        }
+    }
     public string SelectedVariant { get; set; } = "Debug";
     public string? TargetDevice { get; set; }
+    public ProjectJavaEnvironment JavaEnvironment => _javaEnvironment;
 
     public string SdkPath { get; }
     public string AdbPath { get; }
@@ -39,8 +53,15 @@ public sealed class AndroidService
             problems.Add($"emulator not found at '{EmulatorPath}'. Emulator features will be unavailable.");
         if (Platform.Which("git") is null)
             problems.Add("git not found on PATH (sudo dnf install git).");
-        if (Platform.Which("java") is null)
-            problems.Add("java not found on PATH (sudo dnf install java-17-openjdk-devel).");
+        if (_javaEnvironment.Launcher is null)
+            problems.Add(_javaEnvironment.SelectionReason +
+                         " Install a project-compatible JDK or configure JAVA_HOME.");
+        if (_javaEnvironment.RequestedDaemonMajor is int requested &&
+            _javaEnvironment.Launcher?.Major != requested)
+            problems.Add($"This project requests JDK {requested} for Gradle, but no matching local JDK was found.");
+        foreach (int required in _javaEnvironment.RequiredToolchainMajors)
+            if (!_javaEnvironment.Installations.Any(j => j.Major == required && j.IsJdk))
+                problems.Add($"This project compiles with JDK {required}, but that toolchain was not detected locally.");
         return problems;
     }
 
@@ -81,18 +102,34 @@ public sealed class AndroidService
         return list;
     }
 
+    private Task<int> RunGradle(
+        IReadOnlyList<string> args, CancellationToken ct,
+        IReadOnlyDictionary<string, string>? additionalEnvironment = null,
+        bool echoCommand = true)
+    {
+        if (_javaEnvironment.Launcher is null)
+            throw new InvalidOperationException(
+                _javaEnvironment.SelectionReason + " Open Environment → Check Environment for details.");
+        var effectiveArgs = args.ToList();
+        if (_javaEnvironment.ToolchainPaths.Length > 0 &&
+            !effectiveArgs.Any(a => a.StartsWith("-Dorg.gradle.java.installations.paths=", StringComparison.Ordinal)))
+            effectiveArgs.Add($"-Dorg.gradle.java.installations.paths={_javaEnvironment.ToolchainPaths}");
+        return _runner.RunAsync(Gradlew(), effectiveArgs, ProjectPath, ct,
+            _javaEnvironment.BuildEnvironment(additionalEnvironment), echoCommand);
+    }
+
     // ── Build ──────────────────────────────────────────────────────────
     public Task<int> CleanBuild(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), GradleArgs("clean"), ProjectPath, ct);
+        RunGradle(GradleArgs("clean"), ct);
 
     public Task<int> AssembleVariant(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), GradleArgs($"assemble{SelectedVariant}"), ProjectPath, ct);
+        RunGradle(GradleArgs($"assemble{SelectedVariant}"), ct);
 
     public Task<int> AssembleAll(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), GradleArgs("assemble"), ProjectPath, ct);
+        RunGradle(GradleArgs("assemble"), ct);
 
     public Task<int> ListTasks(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), GradleArgs("tasks", "--all"), ProjectPath, ct);
+        RunGradle(GradleArgs("tasks", "--all"), ct);
 
     // ── Lint (Android standard lint) ───────────────────────────────────
     /// <summary>
@@ -103,7 +140,7 @@ public sealed class AndroidService
     public Task<int> RunLint(string variant, CancellationToken ct)
     {
         string task = string.IsNullOrWhiteSpace(variant) ? "lint" : $"lint{variant}";
-        return _runner.RunAsync(Gradlew(), GradleArgs(task), ProjectPath, ct);
+        return RunGradle(GradleArgs(task), ct);
     }
 
     // ── Signed APK build ───────────────────────────────────────────────
@@ -139,7 +176,7 @@ public sealed class AndroidService
 
         LogMessage?.Invoke($"$ gradlew {string.Join(' ', selected.Select(v => "assemble" + v))} " +
                            "-Pandroid.injected.signing.* (redacted)");
-        return _runner.RunAsync(Gradlew(), args, ProjectPath, ct, echoCommand: false);
+        return RunGradle(args, ct, echoCommand: false);
     }
 
     // ── Tests ──────────────────────────────────────────────────────────
@@ -147,7 +184,7 @@ public sealed class AndroidService
     // project's normal per-build-type keys so a test install never changes the
     // certificate on the attached device.
     public Task<int> RunUnitTests(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), GradleArgs($"test{SelectedVariant}UnitTest"), ProjectPath, ct);
+        RunGradle(GradleArgs($"test{SelectedVariant}UnitTest"), ct);
 
     public Task<int> RunInstrumentTests(CancellationToken ct)
     {
@@ -158,12 +195,12 @@ public sealed class AndroidService
             args.Add($"-Pandroid.injected.connected.device.serial={TargetDevice}");
             env = new() { ["ANDROID_SERIAL"] = TargetDevice };
         }
-        return _runner.RunAsync(Gradlew(), args, ProjectPath, ct, env);
+        return RunGradle(args, ct, env);
     }
 
     // ── Daemons / ADB ──────────────────────────────────────────────────
     public Task<int> StopDaemons(CancellationToken ct) =>
-        _runner.RunAsync(Gradlew(), ["--stop"], ProjectPath, ct);
+        RunGradle(["--stop"], ct);
 
     public Task<(int ExitCode, string Output)> ListDevices(CancellationToken ct) =>
         _runner.RunAndCaptureAsync(Adb(), ["devices", "-l"], ProjectPath, ct, echoCommand: true);

@@ -57,6 +57,9 @@ dotnet run -- ci run --project /path/to/android-project
 # Show recent run manifests
 dotnet run -- ci status --project /path/to/android-project --last 10
 
+# Show the selected Gradle JDK and detected compile toolchains
+dotnet run -- ci env --project /path/to/android-project
+
 # Inspect the latest rollback plan without changing anything
 dotnet run -- rollback --project /path/to/android-project --plan
 

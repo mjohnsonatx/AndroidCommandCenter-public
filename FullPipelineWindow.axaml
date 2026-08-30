@@ -39,7 +39,7 @@
 
         <!-- GitHub source -->
         <Border Classes="hr"/>
-        <TextBlock Classes="section" Text="GITHUB SOURCE" Foreground="#cba6f7"/>
+        <TextBlock Classes="section" Text="GITHUB SOURCE" Foreground="{StaticResource MauveBrush}"/>
         <CheckBox x:Name="SyncBranchCheck" Content="Pull selected branch before running"
                   IsCheckedChanged="SyncBranch_Changed"/>
         <StackPanel x:Name="GitHubPanel" Margin="0,8,0,0">

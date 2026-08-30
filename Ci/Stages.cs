@@ -22,7 +22,12 @@ public sealed class PreflightStage : ICiStage
         if (Platform.GradleWrapper(ctx.ProjectPath) is null)
             problems.Add("No gradlew in project root.");
         if (Platform.Which("git") is null) problems.Add("git not on PATH.");
-        if (Platform.Which("java") is null) problems.Add("java not on PATH.");
+        var java = ctx.Android.JavaEnvironment;
+        if (java.Launcher is null)
+            problems.Add(java.SelectionReason);
+        foreach (int required in java.RequiredToolchainMajors)
+            if (!java.Installations.Any(j => j.Major == required && j.IsJdk))
+                problems.Add($"JDK {required} compile toolchain not found locally.");
 
         foreach (var b in new[] { ctx.Dev, ctx.Staging, ctx.Main })
             if (!Models.GitNames.IsValid(b)) problems.Add($"Invalid branch name '{b}'.");

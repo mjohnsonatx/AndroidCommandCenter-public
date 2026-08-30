@@ -13,14 +13,24 @@ public partial class BuildSignedApkWindow : Window
 {
     private readonly List<VariantChoice> _choices;
     private readonly FieldValidator _v;
+    private readonly string? _keytoolPath;
     private readonly bool _ready;
 
     public BuildSignedApkWindow() : this(
-        new SigningDraft("", "", "", "", ImmutableArray<string>.Empty), [], null) { }
+        new SigningDraft("", "", "", "", ImmutableArray<string>.Empty), [], null, null) { }
 
-    public BuildSignedApkWindow(SigningDraft draft, IEnumerable<string> availableVariants, string? activeVariant)
+    public BuildSignedApkWindow(SigningDraft draft, IEnumerable<string> availableVariants,
+        string? activeVariant, string? javaHome)
     {
         InitializeComponent();
+
+        string keytoolName = Platform.IsWindows ? "keytool.exe" : "keytool";
+        string? projectKeytool = string.IsNullOrWhiteSpace(javaHome)
+            ? null
+            : Path.Combine(javaHome, "bin", keytoolName);
+        _keytoolPath = projectKeytool is not null && File.Exists(projectKeytool)
+            ? projectKeytool
+            : Platform.Which("keytool");
 
         KeystoreBox.Text = draft.KeystorePath;
         StorePassBox.Text = draft.StorePassword;
@@ -83,9 +93,10 @@ public partial class BuildSignedApkWindow : Window
         VerifyInfo.Text = "Running keytool…";
         try
         {
-            string keytool = Platform.Which("keytool")
+            string keytool = _keytoolPath
                 ?? throw new InvalidOperationException(
-                    "keytool not found on PATH. Install a JDK (sudo dnf install java-17-openjdk-devel).");
+                    "keytool was not found in the selected project's JDK or on PATH. " +
+                    "Install a compatible JDK or configure JAVA_HOME.");
 
             var psi = new ProcessStartInfo(keytool)
             {

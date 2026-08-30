@@ -77,7 +77,7 @@
         </StackPanel>
 
         <Border Classes="hr"/>
-        <TextBlock Classes="section" Text="RUN TELEMETRY (OPTIONAL)" Foreground="#cba6f7"/>
+        <TextBlock Classes="section" Text="RUN TELEMETRY (OPTIONAL)" Foreground="{StaticResource MauveBrush}"/>
         <CheckBox x:Name="FirestoreCheck" Content="Publish run manifests to Google Firestore"
                   IsCheckedChanged="Firestore_Changed"/>
         <StackPanel x:Name="FirestorePanel" Margin="0,7,0,0">

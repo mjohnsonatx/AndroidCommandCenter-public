@@ -7,6 +7,7 @@ namespace AndroidCommandCenter.Cli;
 /// <summary>
 ///   acc ci run      [--project PATH] [--dry-run] [--no-push] [--trigger schedule]
 ///   acc ci status   [--project PATH] [--last N]
+///   acc ci env      [--project PATH]          (SDK/JDK/toolchain diagnostics)
 ///   acc ci probe    [--project PATH]          (Firestore connectivity)
 ///   acc rollback    [--project PATH] [--run ID] [--plan] [--push] [--yes] [--reason TEXT]
 /// Exit codes: 0 ok · 1 gates failed · 2 config error · 3 cancelled · 4 rollback refused
@@ -19,7 +20,7 @@ public static class CliEntry
         string cmd = args[0];
         string sub = args.Length > 1 && !args[1].StartsWith("--") ? args[1] : "";
 
-        bool known = (cmd, sub) is ("ci", "run") or ("ci", "status") or
+        bool known = (cmd, sub) is ("ci", "run") or ("ci", "status") or ("ci", "env") or
             ("ci", "probe") || cmd == "rollback";
         if (!known) return Usage();
 
@@ -38,6 +39,19 @@ public static class CliEntry
                     $"{(manifest.Success ? "PASS" : "FAIL"),-4}  {manifest.RunId}  " +
                     $"{manifest.Tag ?? "",-16} {manifest.Result}");
             return 0;
+        }
+
+        if ((cmd, sub) == ("ci", "env"))
+        {
+            var diagnosticAndroid = new AndroidService(new ProcessRunner()) { ProjectPath = projectPath };
+            Console.WriteLine($"Project:  {projectPath}");
+            Console.WriteLine($"SDK:      {diagnosticAndroid.SdkPath}");
+            Console.WriteLine($"Gradle:   {Platform.GradleWrapper(projectPath) ?? "NOT FOUND"}");
+            Console.WriteLine(diagnosticAndroid.JavaEnvironment.Report());
+            var problems = diagnosticAndroid.Diagnose();
+            if (problems.Count == 0) { Console.WriteLine("Environment looks good."); return 0; }
+            foreach (var problem in problems) Console.Error.WriteLine("- " + problem);
+            return 2;
         }
 
         var cfg = settings.Pipeline;
@@ -148,7 +162,7 @@ public static class CliEntry
     private static int Usage()
     {
         Console.Error.WriteLine(
-            "Usage: acc ci run|status|probe [--project PATH] [--dry-run] [--no-push] [--trigger NAME]\n" +
+            "Usage: acc ci run|status|env|probe [--project PATH] [--dry-run] [--no-push] [--trigger NAME]\n" +
             "       acc rollback [--project PATH] [--run ID] [--plan] [--push] [--yes] [--reason TEXT]");
         return 2;
     }

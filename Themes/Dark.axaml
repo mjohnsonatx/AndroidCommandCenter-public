@@ -2,22 +2,22 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <Styles.Resources>
-    <!-- Catppuccin Mocha — same palette you were using -->
-    <Color x:Key="Crust">#11111b</Color>
-    <Color x:Key="Mantle">#181825</Color>
-    <Color x:Key="Base">#1e1e2e</Color>
-    <Color x:Key="Surface0">#313244</Color>
-    <Color x:Key="Surface1">#45475a</Color>
-    <Color x:Key="Surface2">#585b70</Color>
-    <Color x:Key="Overlay0">#6c7086</Color>
-    <Color x:Key="Subtext0">#a6adc8</Color>
-    <Color x:Key="Text">#cdd6f4</Color>
-    <Color x:Key="Blue">#89b4fa</Color>
-    <Color x:Key="Green">#a6e3a1</Color>
-    <Color x:Key="Yellow">#f9e2af</Color>
-    <Color x:Key="Peach">#fab387</Color>
-    <Color x:Key="Red">#f38ba8</Color>
-    <Color x:Key="Mauve">#cba6f7</Color>
+    <!-- Neutral slate with blue/teal accents. -->
+    <Color x:Key="Crust">#0b1118</Color>
+    <Color x:Key="Mantle">#111a24</Color>
+    <Color x:Key="Base">#17212c</Color>
+    <Color x:Key="Surface0">#223043</Color>
+    <Color x:Key="Surface1">#31435a</Color>
+    <Color x:Key="Surface2">#405773</Color>
+    <Color x:Key="Overlay0">#8292a6</Color>
+    <Color x:Key="Subtext0">#b6c2d0</Color>
+    <Color x:Key="Text">#e7edf4</Color>
+    <Color x:Key="Blue">#62b6ff</Color>
+    <Color x:Key="Green">#68d391</Color>
+    <Color x:Key="Yellow">#f2cc8f</Color>
+    <Color x:Key="Peach">#f4a261</Color>
+    <Color x:Key="Red">#ff7a90</Color>
+    <Color x:Key="Mauve">#52d2c7</Color>
 
     <SolidColorBrush x:Key="CrustBrush"    Color="{StaticResource Crust}"/>
     <SolidColorBrush x:Key="MantleBrush"   Color="{StaticResource Mantle}"/>
@@ -42,7 +42,7 @@
   <Style Selector="Window">
     <Setter Property="Background" Value="{StaticResource BaseBrush}"/>
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
   </Style>
 
   <!-- ═══ TEXT ═══ -->
@@ -55,29 +55,55 @@
   </Style>
   <Style Selector="TextBlock.section">
     <Setter Property="FontWeight" Value="Bold"/>
-    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="FontSize" Value="15"/>
     <Setter Property="Margin" Value="0,0,0,8"/>
   </Style>
   <Style Selector="TextBlock.hint">
     <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
-    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="FontSize" Value="12"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
+  </Style>
+  <Style Selector="TextBlock.toolbar-label">
+    <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontWeight" Value="Bold"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="0,0,7,0"/>
+  </Style>
+  <Style Selector="TextBlock.metric-label">
+    <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="0,0,7,0"/>
+  </Style>
+  <Style Selector="TextBlock.metric-value">
+    <Setter Property="Foreground" Value="{StaticResource Subtext0Brush}"/>
+    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="7,0,0,0"/>
+  </Style>
+  <Style Selector="TextBlock.form-label">
+    <Setter Property="Foreground" Value="{StaticResource Subtext0Brush}"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="Margin" Value="0,0,8,8"/>
   </Style>
   <!-- Inline field error — hidden until there's text -->
   <Style Selector="TextBlock.field-error">
     <Setter Property="Foreground" Value="{StaticResource RedBrush}"/>
-    <Setter Property="FontSize" Value="11"/>
+    <Setter Property="FontSize" Value="12"/>
     <Setter Property="Margin" Value="2,2,0,0"/>
     <Setter Property="TextWrapping" Value="Wrap"/>
   </Style>
   <Style Selector="TextBlock.ctx-key">
     <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
     <Setter Property="Margin" Value="0,0,4,0"/>
   </Style>
   <Style Selector="TextBlock.ctx-value">
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="VerticalAlignment" Value="Center"/>
     <Setter Property="Margin" Value="0,0,16,0"/>
@@ -87,7 +113,7 @@
   <Style Selector="Button.cmd">
     <Setter Property="Margin" Value="4"/>
     <Setter Property="Padding" Value="12,6"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     <Setter Property="Background" Value="{StaticResource Surface0Brush}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Surface1Brush}"/>
@@ -95,6 +121,11 @@
     <Setter Property="CornerRadius" Value="3"/>
     <Setter Property="Cursor" Value="Hand"/>
     <Setter Property="HorizontalContentAlignment" Value="Center"/>
+  </Style>
+  <Style Selector="Button.cmd.compact">
+    <Setter Property="Margin" Value="4,0,0,0"/>
+    <Setter Property="Padding" Value="9,4"/>
+    <Setter Property="MinHeight" Value="28"/>
   </Style>
   <Style Selector="Button.cmd:pointerover /template/ ContentPresenter#PART_ContentPresenter">
     <Setter Property="Background" Value="{StaticResource Surface1Brush}"/>
@@ -108,22 +139,22 @@
   </Style>
 
   <Style Selector="Button.cmd.primary">
-    <Setter Property="Background" Value="#1e66f5"/>
-    <Setter Property="BorderBrush" Value="#1e66f5"/>
+    <Setter Property="Background" Value="#1976d2"/>
+    <Setter Property="BorderBrush" Value="#1976d2"/>
     <Setter Property="Foreground" Value="White"/>
     <Setter Property="FontWeight" Value="Bold"/>
     <Setter Property="Padding" Value="20,6"/>
   </Style>
   <Style Selector="Button.cmd.success">
-    <Setter Property="Background" Value="#40a02b"/>
-    <Setter Property="BorderBrush" Value="#40a02b"/>
+    <Setter Property="Background" Value="#2f9e65"/>
+    <Setter Property="BorderBrush" Value="#2f9e65"/>
     <Setter Property="Foreground" Value="White"/>
     <Setter Property="FontWeight" Value="Bold"/>
     <Setter Property="Padding" Value="20,6"/>
   </Style>
   <Style Selector="Button.cmd.danger">
-    <Setter Property="Background" Value="#e64553"/>
-    <Setter Property="BorderBrush" Value="#e64553"/>
+    <Setter Property="Background" Value="#d94c66"/>
+    <Setter Property="BorderBrush" Value="#d94c66"/>
     <Setter Property="Foreground" Value="White"/>
     <Setter Property="FontWeight" Value="Bold"/>
   </Style>
@@ -141,7 +172,7 @@
     <Setter Property="HorizontalAlignment" Value="Stretch"/>
     <Setter Property="HorizontalContentAlignment" Value="Left"/>
     <Setter Property="Padding" Value="24,6,8,6"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="CornerRadius" Value="4"/>
     <Setter Property="Cursor" Value="Hand"/>
   </Style>
@@ -168,7 +199,7 @@
     <Setter Property="CaretBrush" Value="{StaticResource TextBrush}"/>
     <Setter Property="SelectionBrush" Value="{StaticResource Surface2Brush}"/>
     <Setter Property="Padding" Value="6,4"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="MinHeight" Value="28"/>
     <Setter Property="CornerRadius" Value="3"/>
   </Style>
@@ -187,11 +218,11 @@
   </Style>
   <Style Selector="TextBox.mono">
     <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
   </Style>
   <Style Selector="TextBox.log">
     <Setter Property="FontFamily" Value="{StaticResource MonoFont}"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="Background" Value="{StaticResource CrustBrush}"/>
     <Setter Property="Foreground" Value="{StaticResource Subtext0Brush}"/>
     <Setter Property="BorderThickness" Value="0"/>
@@ -205,7 +236,7 @@
     <Setter Property="Background" Value="{StaticResource Surface0Brush}"/>
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Surface1Brush}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="MinHeight" Value="28"/>
     <Setter Property="CornerRadius" Value="3"/>
     <Setter Property="HorizontalAlignment" Value="Stretch"/>
@@ -216,7 +247,7 @@
   </Style>
   <Style Selector="ComboBoxItem">
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="Padding" Value="8,4"/>
   </Style>
   <Style Selector="ComboBoxItem:pointerover /template/ ContentPresenter">
@@ -228,7 +259,7 @@
 
   <Style Selector="CheckBox">
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="Margin" Value="0,3"/>
   </Style>
 
@@ -253,14 +284,17 @@
     <Setter Property="BorderThickness" Value="0"/>
     <Setter Property="Margin" Value="0,2,0,0"/>
     <Setter Property="Padding" Value="0"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
   </Style>
   <Style Selector="Expander.nav /template/ ToggleButton#PART_toggle">
     <Setter Property="Background" Value="Transparent"/>
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="Padding" Value="8,6"/>
     <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="HorizontalAlignment" Value="Stretch"/>
+    <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
   </Style>
   <Style Selector="Expander.nav /template/ Border#ExpanderContent">
     <Setter Property="Background" Value="Transparent"/>
@@ -275,7 +309,7 @@
   </Style>
   <Style Selector="TabItem">
     <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
-    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="FontSize" Value="14"/>
     <Setter Property="FontWeight" Value="Normal"/>
     <Setter Property="Padding" Value="14,7"/>
     <Setter Property="MinHeight" Value="36"/>
@@ -311,7 +345,7 @@
   <Style Selector="DataGridColumnHeader">
     <Setter Property="Background" Value="{StaticResource MantleBrush}"/>
     <Setter Property="Foreground" Value="{StaticResource Subtext0Brush}"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="FontWeight" Value="SemiBold"/>
     <Setter Property="Padding" Value="8,6"/>
     <Setter Property="MinHeight" Value="30"/>
@@ -326,7 +360,7 @@
     <Setter Property="Fill" Value="{StaticResource Surface1Brush}"/>
   </Style>
   <Style Selector="DataGridCell">
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="Padding" Value="8,4"/>
     <Setter Property="MinHeight" Value="26"/>
   </Style>
@@ -356,6 +390,26 @@
     <Setter Property="CornerRadius" Value="6"/>
     <Setter Property="Padding" Value="10,8"/>
   </Style>
+  <Style Selector="Border.card.panel-card">
+    <Setter Property="Padding" Value="16,14"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Surface0Brush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+  </Style>
+  <Style Selector="Border.empty-banner">
+    <Setter Property="Background" Value="#14283a"/>
+    <Setter Property="BorderBrush" Value="{StaticResource BlueBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="7"/>
+    <Setter Property="Padding" Value="16,12"/>
+  </Style>
+  <Style Selector="Border.status-pill">
+    <Setter Property="Background" Value="{StaticResource CrustBrush}"/>
+    <Setter Property="BorderBrush" Value="{StaticResource Surface0Brush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="12"/>
+    <Setter Property="Padding" Value="11,5"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+  </Style>
   <Style Selector="GridSplitter">
     <Setter Property="Background" Value="{StaticResource Surface0Brush}"/>
   </Style>
@@ -366,7 +420,7 @@
     <Setter Property="Background" Value="{StaticResource Surface0Brush}"/>
     <Setter Property="Foreground" Value="{StaticResource TextBrush}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Surface1Brush}"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
   </Style>
 
   <!-- ═══ TOASTS ═══ -->
@@ -389,7 +443,7 @@
     <Setter Property="BorderThickness" Value="0"/>
     <Setter Property="Foreground" Value="{StaticResource Overlay0Brush}"/>
     <Setter Property="Padding" Value="6,2"/>
-    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="FontSize" Value="15"/>
     <Setter Property="Cursor" Value="Hand"/>
   </Style>
   <Style Selector="Button.toast-link">
@@ -397,7 +451,7 @@
     <Setter Property="BorderThickness" Value="0"/>
     <Setter Property="Foreground" Value="{StaticResource BlueBrush}"/>
     <Setter Property="Padding" Value="0"/>
-    <Setter Property="FontSize" Value="12"/>
+    <Setter Property="FontSize" Value="13"/>
     <Setter Property="Cursor" Value="Hand"/>
   </Style>
 

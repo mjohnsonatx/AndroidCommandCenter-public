@@ -139,6 +139,7 @@ public partial class MainWindow : Window
         _uiReady = true;
         Log("Android Command Center ready.");
         Log($"SDK:      {_android.SdkPath}");
+        Log($"Java:     {_android.JavaEnvironment.ShortDisplay}");
         Log($"Config:   {Paths.ConfigDir}");
         Log($"Logs:     {Paths.StateDir}");
         Log($"Secrets:  {SecretStore.BackendDescription}");
@@ -149,6 +150,7 @@ public partial class MainWindow : Window
             SecretStore.Backend.EncryptedFile => "⚠ file (degraded)",
             _ => "✗ unavailable"
         };
+        UpdateContextBanner();
 
         if (_settings.LoadError != null)
             _toasts.Warning("Settings could not be read", _settings.LoadError);
@@ -238,13 +240,16 @@ public partial class MainWindow : Window
         CpuBar.Value = s.CpuPercent;
         CpuLabel.Text = $"{s.CpuPercent:F0}%";
         MemBar.Value = s.MemoryPercent;
-        MemLabel.Text = s.MemoryTotalMb > 0 ? $"{s.MemoryUsedMb:N0}/{s.MemoryTotalMb:N0} MB" : "—";
+        MemLabel.Text = s.MemoryTotalMb > 0
+            ? $"{s.MemoryUsedMb / 1024.0:F1}/{s.MemoryTotalMb / 1024.0:F1} GB"
+            : "—";
         DaemonLabel.Text = s.JavaProcessCount.ToString();
     }
 
     private void UpdateContextBanner()
     {
-        CtxProjectLabel.Text = string.IsNullOrEmpty(_android.ProjectPath)
+        bool hasProject = !string.IsNullOrEmpty(_android.ProjectPath);
+        CtxProjectLabel.Text = !hasProject
             ? "(no project)"
             : Path.GetFileName(_android.ProjectPath.TrimEnd('/', '\\'));
         CtxRepoLabel.Text = !string.IsNullOrWhiteSpace(_activeProfile.GitHubRepo)
@@ -253,6 +258,9 @@ public partial class MainWindow : Window
             ? _activeProfile.DefaultBranch : "—";
         CtxSigningLabel.Text = _profiles.HasCompleteSigning(_activeProfile) ? "✓ ready" : "✗ not set";
         CtxFirebaseLabel.Text = _activeProfile.HasFirebase ? "✓ configured" : "✗ not set";
+        CtxJdkLabel.Text = _android.JavaEnvironment.ShortDisplay;
+        ToolTip.SetTip(CtxJdkLabel, _android.JavaEnvironment.Report());
+        NoProjectBanner.IsVisible = !hasProject;
     }
 
     #endregion
@@ -718,12 +726,15 @@ public partial class MainWindow : Window
         report.AppendLine($"adb:         {_android.AdbPath}");
         report.AppendLine($"emulator:    {_android.EmulatorPath}");
         report.AppendLine($"git:         {Platform.Which("git") ?? "NOT FOUND"}");
-        report.AppendLine($"java:        {Platform.Which("java") ?? "NOT FOUND"}");
-        report.AppendLine($"keytool:     {Platform.Which("keytool") ?? "NOT FOUND"}");
+        report.AppendLine($"java:        {_android.JavaEnvironment.Launcher?.JavaPath ?? "NOT FOUND"}");
+        report.AppendLine($"JAVA_HOME:   {_android.JavaEnvironment.Launcher?.Home ?? "NOT FOUND"}");
+        report.AppendLine($"keytool:     {(_android.JavaEnvironment.Launcher is { } jdk ? Path.Combine(jdk.Home, "bin", Platform.IsWindows ? "keytool.exe" : "keytool") : "NOT FOUND")}");
         report.AppendLine($"firebase:    {Platform.Which(_activeProfile.FirebaseCliPath) ?? "NOT FOUND"}");
         report.AppendLine($"gradlew:     {Platform.GradleWrapper(_android.ProjectPath) ?? "NOT FOUND"}");
         report.AppendLine($"/dev/kvm:    {(File.Exists("/dev/kvm") ? "present" : "MISSING")}");
         report.AppendLine($"secrets:     {SecretStore.BackendDescription}");
+        report.AppendLine();
+        report.AppendLine(_android.JavaEnvironment.Report());
 
         Log("\n=== Environment ===\n" + report);
         if (problems.Count == 0)
@@ -1500,7 +1511,8 @@ public partial class MainWindow : Window
         using var gate = await _configGate.AcquireAsync("Build Signed APK dialog");
 
         var draft = SigningDraft.From(_activeProfile, _secrets, _settings.CiCd);
-        var result = await new BuildSignedApkWindow(draft, _variants, _android.SelectedVariant)
+        var result = await new BuildSignedApkWindow(draft, _variants, _android.SelectedVariant,
+                _android.JavaEnvironment.Launcher?.Home)
             .ShowDialog<SigningDraft?>(this);
         if (result is null) { _toasts.Info("Build cancelled"); return; }
 
