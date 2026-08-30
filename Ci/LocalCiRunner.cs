@@ -17,6 +17,7 @@ public sealed class LocalCiRunner
 
     public event Action<string>? LogMessage;
     public event Action<StageRecord>? StageChanged;
+    public event Action<CiRunProgress>? ProgressChanged;
 
     public LocalCiRunner(ProcessRunner runner, GitService git, AndroidService android,
                          TestReportService tests, FirestoreSink? firestore = null)
@@ -43,6 +44,7 @@ public sealed class LocalCiRunner
         IReadOnlyList<ICiStage>? stages = null)
     {
         stages ??= DefaultStages;
+        int progressTotal = stages.Count + 1; // configured stages + daemon cleanup
         string project = Path.GetFileName(profile.ProjectPath.TrimEnd('/', '\\'));
         var logger = new PipelineLogger("CI", project, Paths.PipelineLogs);
 
@@ -108,23 +110,30 @@ public sealed class LocalCiRunner
 
         try
         {
-            foreach (var stage in stages)
+            for (int stageIndex = 0; stageIndex < stages.Count; stageIndex++)
             {
                 ct.ThrowIfCancellationRequested();
+                var stage = stages[stageIndex];
                 var rec = new StageRecord { Name = stage.Name, StartedAt = DateTime.UtcNow };
                 manifest.Stages.Add(rec);
+
+                void ReportProgress()
+                {
+                    StageChanged?.Invoke(rec);
+                    ProgressChanged?.Invoke(new CiRunProgress(stageIndex + 1, progressTotal, rec));
+                }
 
                 if (!stage.ShouldRun(ctx))
                 {
                     rec.Status = StageStatus.Skipped; rec.FinishedAt = DateTime.UtcNow;
                     rec.Summary = "Disabled in config.";
                     ctx.Info($"── {stage.Name}: skipped");
-                    StageChanged?.Invoke(rec);
+                    ReportProgress();
                     continue;
                 }
 
                 rec.Status = StageStatus.Running;
-                StageChanged?.Invoke(rec);
+                ReportProgress();
                 logger.Section(stage.Name.ToUpperInvariant());
                 ctx.Info($"── {stage.Name}");
 
@@ -169,7 +178,7 @@ public sealed class LocalCiRunner
                 {
                     _runner.OutputReceived -= capture;
                     _git.LogMessage -= capture;
-                    StageChanged?.Invoke(rec);
+                    ReportProgress();
                 }
             }
 
@@ -186,8 +195,40 @@ public sealed class LocalCiRunner
         {
             manifest.FinishedAt = DateTime.UtcNow;
 
-            // Stop gradle daemons — a scheduled run must not leave 3 GB of JVMs behind.
-            try { using var c = new CancellationTokenSource(20_000); await _android.StopDaemons(c.Token); } catch { }
+            // Stop Gradle daemons, but keep this final command attached to the
+            // operation token so the UI Abort button can terminate it too.
+            var cleanup = new StageRecord
+            {
+                Name = "Stop Gradle daemons",
+                Status = ct.IsCancellationRequested ? StageStatus.Skipped : StageStatus.Running,
+                StartedAt = DateTime.UtcNow,
+                Summary = ct.IsCancellationRequested ? "Skipped because the run was aborted." : ""
+            };
+            manifest.Stages.Add(cleanup);
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, cleanup));
+            if (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(20));
+                    await _android.StopDaemons(timeout.Token);
+                    cleanup.Status = StageStatus.Passed;
+                    cleanup.Summary = "Gradle daemons stopped.";
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    cleanup.Status = StageStatus.Skipped;
+                    cleanup.Summary = "Daemon cleanup aborted by user.";
+                }
+                catch (Exception ex)
+                {
+                    cleanup.Status = StageStatus.Warning;
+                    cleanup.Summary = ex.Message;
+                }
+            }
+            cleanup.FinishedAt = DateTime.UtcNow;
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, cleanup));
 
             ctx.Info($"Result: {manifest.Result} ({manifest.DurationSeconds:F0}s)");
 

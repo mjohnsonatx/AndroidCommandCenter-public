@@ -28,52 +28,94 @@ public class GitHubIssueRestService
                 new AuthenticationHeaderValue("Bearer", token);
     }
 
+    public async Task<string> GetAuthenticatedLoginAsync(
+        string token, CancellationToken ct = default)
+    {
+        token = token.Trim();
+        if (token.Length == 0)
+            throw new InvalidOperationException("GitHub token is empty.");
+
+        Auth(token);
+        using var response = await _http.GetAsync("https://api.github.com/user", ct);
+        await RequireSuccess(response, "GitHub authentication", ct);
+        await using var stream = await response.Content.ReadAsStreamAsync(ct);
+        using var json = await JsonDocument.ParseAsync(stream, cancellationToken: ct);
+        string login = json.RootElement.TryGetProperty("login", out var value)
+            ? value.GetString() ?? ""
+            : "";
+        if (login.Length == 0)
+            throw new InvalidOperationException(
+                "GitHub accepted the token but did not return an account login.");
+
+        LogMessage?.Invoke($"[github] authenticated as @{login}");
+        return login;
+    }
+
     // ── LIST REPOS FOR AUTHENTICATED USER OR ORG ──────────────
 
     /// <summary>
-    /// Lists repos the token has access to. For a personal token this returns
-    /// the user's repos; for an org owner it returns org repos too.
-    /// Returns repo full names like "owner/repo-name".
+    /// Lists every repository visible to the authenticated token, including
+    /// private repositories. An optional owner filters that authenticated list
+    /// locally. GitHub's public user-repository endpoint cannot return private
+    /// repositories and must not be used for this operation.
     /// </summary>
     public async Task<List<GitHubRepoDto>> GetReposAsync(
         string token, string? owner = null, CancellationToken ct = default)
     {
-        Auth(token);
+        await GetAuthenticatedLoginAsync(token, ct);
+        owner = owner?.Trim();
         var all = new List<GitHubRepoDto>();
 
         for (int page = 1; page <= 20; page++)
         {
             ct.ThrowIfCancellationRequested();
 
-            // If owner specified, use /users/{owner}/repos
-            // Otherwise use /user/repos for the authenticated user
-            string url = string.IsNullOrWhiteSpace(owner)
-                ? $"https://api.github.com/user/repos?per_page=100&page={page}&sort=updated&direction=desc"
-                : $"https://api.github.com/users/{Uri.EscapeDataString(owner)}/repos?per_page=100&page={page}&sort=updated&direction=desc";
+            string url = "https://api.github.com/user/repos" +
+                "?visibility=all&affiliation=owner,collaborator,organization_member" +
+                $"&per_page=100&page={page}&sort=updated&direction=desc";
 
             LogMessage?.Invoke($"[repos] fetching page {page}…");
-            var resp = await _http.GetAsync(url, ct);
-
-            if (!resp.IsSuccessStatusCode)
-            {
-                // If /users/ 404s, try /orgs/
-                if (resp.StatusCode == System.Net.HttpStatusCode.NotFound
-                    && !string.IsNullOrWhiteSpace(owner))
-                {
-                    url = $"https://api.github.com/orgs/{Uri.EscapeDataString(owner)}/repos?per_page=100&page={page}&sort=updated&direction=desc";
-                    resp = await _http.GetAsync(url, ct);
-                }
-                resp.EnsureSuccessStatusCode();
-            }
+            using var resp = await _http.GetAsync(url, ct);
+            await RequireSuccess(resp, "GitHub repository request", ct);
 
             var json = await resp.Content.ReadAsStringAsync(ct);
             var batch = JsonSerializer.Deserialize<List<GitHubRepoDto>>(json, JsonOpts) ?? [];
-            all.AddRange(batch);
+            all.AddRange(string.IsNullOrWhiteSpace(owner)
+                ? batch
+                : batch.Where(repo => string.Equals(
+                    repo.OwnerLogin, owner, StringComparison.OrdinalIgnoreCase)));
             if (batch.Count < 100) break;
         }
 
-        LogMessage?.Invoke($"[repos] loaded {all.Count} repositories");
-        return all;
+        var distinct = all
+            .DistinctBy(repo => repo.FullName, StringComparer.OrdinalIgnoreCase)
+            .OrderByDescending(repo => repo.UpdatedAt)
+            .ToList();
+        LogMessage?.Invoke($"[repos] loaded {distinct.Count} authenticated repositories" +
+                           (string.IsNullOrWhiteSpace(owner) ? "" : $" owned by {owner}"));
+        return distinct;
+    }
+
+    private static async Task RequireSuccess(
+        HttpResponseMessage response, string operation, CancellationToken ct)
+    {
+        if (response.IsSuccessStatusCode) return;
+
+        string body = await response.Content.ReadAsStringAsync(ct);
+        string detail = "";
+        try
+        {
+            using var json = JsonDocument.Parse(body);
+            if (json.RootElement.TryGetProperty("message", out var message))
+                detail = message.GetString() ?? "";
+        }
+        catch { }
+
+        string guidance = response.StatusCode == System.Net.HttpStatusCode.Unauthorized
+            ? " The saved token is invalid or expired; run `gh auth login` and save a fresh `gh auth token`."
+            : "";
+        throw new InvalidOperationException(
+            $"{operation} failed: {(int)response.StatusCode} {response.ReasonPhrase}. {detail}{guidance}".Trim());
     }
 
     public async Task<List<GitHubIssueModel>> GetIssuesAsync(

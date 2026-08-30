@@ -4,6 +4,8 @@ namespace AndroidCommandCenter.Ci;
 
 public enum StageStatus { Pending, Running, Passed, Failed, Skipped, Warning }
 
+public sealed record CiRunProgress(int Current, int Total, StageRecord Stage);
+
 public sealed class StageRecord
 {
     public string Name { get; set; } = "";

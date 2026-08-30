@@ -32,6 +32,7 @@ public partial class MainWindow : Window
     private readonly FirebaseService _firebase;
     private readonly EnvFileService _env = new(Paths.EnvFile);
     private readonly GitHubIssueRestService _issueService = new();
+    private readonly GitHubCliCredentialService _ghCredentials = new();
     private readonly DeploymentReportService _deploymentReports = new();
     private readonly ProjectProfileService _profiles;
     private readonly AppSettings _settings;
@@ -56,6 +57,9 @@ public partial class MainWindow : Window
 
     private CancellationTokenSource? _cts;
     private bool _isRunning;
+    private string _operationName = "";
+    private int _operationCurrent;
+    private int _operationTotal;
     private bool _deviceRefreshing;
     private bool _uiReady;
 
@@ -105,6 +109,11 @@ public partial class MainWindow : Window
 
         _dashboard.StatsUpdated += s => Dispatcher.UIThread.Post(() => UpdateDashboard(s));
         _dashboard.Degraded += m => _toasts.Warning("System monitor unavailable", m);
+        _workflow.ProgressChanged += p => Dispatcher.UIThread.Post(() =>
+            ReportOperationProgress(
+                p.Current, p.Total, p.Step,
+                p.State is not WorkflowProgressState.Running,
+                p.State == WorkflowProgressState.Failed ? "failed" : null));
         _dashboard.Start();
 
         ProjectCombo.ItemsSource = _projects;
@@ -232,7 +241,35 @@ public partial class MainWindow : Window
     {
         StatusLabel.Text = text;
         StatusLabel.Foreground = text == "Idle" ? IdleBrush : BusyBrush;
-        BusySpinner.IsVisible = text != "Idle";
+        BusySpinner.IsVisible = text != "Idle" && _operationTotal <= 0;
+    }
+
+    private void ReportOperationProgress(
+        int current, int total, string phase, bool completed = false, string? detail = null)
+    {
+        if (!_isRunning) return;
+
+        _operationTotal = Math.Max(1, total);
+        _operationCurrent = Math.Clamp(current, 1, _operationTotal);
+        OperationProgressBar.IsVisible = true;
+        OperationProgressBar.IsIndeterminate = _operationTotal == 1 && !completed;
+        OperationProgressBar.Maximum = _operationTotal;
+        OperationProgressBar.Value = completed ? _operationCurrent : _operationCurrent - 1;
+        OperationProgressLabel.IsVisible = true;
+        OperationProgressLabel.Text = $"{_operationCurrent} of {_operationTotal} · {phase}" +
+                                      (string.IsNullOrWhiteSpace(detail) ? "" : $" · {detail}");
+        BusySpinner.IsVisible = false;
+        SetStatus(phase);
+    }
+
+    private void ReportTestResults(string testType, TestReport report)
+    {
+        if (report.Total <= 0) return;
+        ReportOperationProgress(
+            Math.Max(1, _operationCurrent), Math.Max(1, _operationTotal),
+            testType, completed: true,
+            detail: $"tests: {report.Passed} passed of {report.Total}; " +
+                    $"{report.Failed} failed, {report.Skipped} skipped");
     }
 
     private void UpdateDashboard(SystemStats s)
@@ -281,9 +318,12 @@ public partial class MainWindow : Window
         return false;
     }
 
-    private void EnterBusy(string status)
+    private void EnterBusy(string status, int totalSteps = 1)
     {
         _isRunning = true;
+        _operationName = status;
+        _operationCurrent = 0;
+        _operationTotal = Math.Max(0, totalSteps);
         _cts = new CancellationTokenSource();
         SidebarOps.IsEnabled = false;
         ProjectCombo.IsEnabled = false;
@@ -291,7 +331,18 @@ public partial class MainWindow : Window
         AvdCombo.IsEnabled = false;
         DeviceCombo.IsEnabled = false;
         CancelButton.IsEnabled = true;
-        SetStatus(status);
+        TopAbortButton.IsVisible = true;
+        TopAbortButton.IsEnabled = true;
+        OperationProgressBar.IsVisible = totalSteps > 0;
+        OperationProgressLabel.IsVisible = true;
+        if (totalSteps > 0)
+            ReportOperationProgress(1, totalSteps, status);
+        else
+        {
+            OperationProgressBar.IsIndeterminate = true;
+            OperationProgressLabel.Text = status;
+            SetStatus(status);
+        }
     }
 
     private void ExitBusy()
@@ -303,6 +354,15 @@ public partial class MainWindow : Window
         AvdCombo.IsEnabled = true;
         DeviceCombo.IsEnabled = true;
         CancelButton.IsEnabled = false;
+        TopAbortButton.IsEnabled = false;
+        TopAbortButton.IsVisible = false;
+        OperationProgressBar.IsVisible = false;
+        OperationProgressBar.Value = 0;
+        OperationProgressLabel.IsVisible = false;
+        OperationProgressLabel.Text = "";
+        _operationName = "";
+        _operationCurrent = 0;
+        _operationTotal = 0;
         SetStatus("Idle");
         _cts?.Dispose();
         _cts = null;
@@ -332,6 +392,8 @@ public partial class MainWindow : Window
         try
         {
             int code = await op(_cts!.Token);
+            ReportOperationProgress(1, 1, name, completed: true,
+                detail: code == 0 ? "completed" : $"exit {code}");
             sw.Stop();
             Log($"===== {name} exit {code} ({sw.Elapsed:mm\\:ss}) =====");
 
@@ -376,6 +438,7 @@ public partial class MainWindow : Window
         try
         {
             await work(_cts!.Token);
+            ReportOperationProgress(1, 1, name, completed: true, detail: "completed");
             if (successMessage != null) _toasts.Success(name, successMessage);
         }
         catch (OperationCanceledException) { _toasts.Warning(name + " cancelled"); }
@@ -390,9 +453,17 @@ public partial class MainWindow : Window
     private void Cancel_Click(object? s, RoutedEventArgs e)
     {
         if (_cts is null) { _toasts.Info("Nothing to cancel"); return; }
+        if (_cts.IsCancellationRequested) return;
         _cts.Cancel();
         Log("[!] Cancel requested…");
-        SetStatus("Cancelling");
+        CancelButton.IsEnabled = false;
+        TopAbortButton.IsEnabled = false;
+        OperationProgressBar.IsIndeterminate = true;
+        OperationProgressBar.IsVisible = true;
+        OperationProgressLabel.IsVisible = true;
+        OperationProgressLabel.Text = $"Abort requested · stopping {_operationName} process tree…";
+        _operationTotal = 0;
+        SetStatus("Aborting");
     }
 
     private void ClearLog_Click(object? s, RoutedEventArgs e)
@@ -474,6 +545,9 @@ public partial class MainWindow : Window
 
         MainGitHubOwnerBox.Text = _activeProfile.GitHubOwner;
         MainGitHubTokenBox.Text = _profiles.GitHubToken(_activeProfile);
+        GitHubAuthStatusLabel.Text = string.IsNullOrWhiteSpace(MainGitHubTokenBox.Text)
+            ? "Not authenticated"
+            : "Credential stored in system keyring · verification pending";
         MainGitRemoteBox.Text = _activeProfile.DefaultRemote;
         MainBranchBox.Text = _activeProfile.DefaultBranch;
         MainGitHubRepoBox.Text = _activeProfile.GitHubRepo;
@@ -499,7 +573,7 @@ public partial class MainWindow : Window
 
         if (!string.IsNullOrEmpty(MainGitHubTokenBox.Text))
         {
-            try { _profiles.SetGitHubToken(_activeProfile, MainGitHubTokenBox.Text!); }
+            try { _profiles.SetGitHubToken(_activeProfile, MainGitHubTokenBox.Text!.Trim()); }
             catch (Exception ex) { _toasts.Error("Could not store GitHub token", Toaster.Friendly(ex)); }
         }
         UpdateContextBanner();
@@ -809,7 +883,7 @@ public partial class MainWindow : Window
     {
         if (!RequireProject() || !RequireIdle()) return;
 
-        EnterBusy(testType);
+        EnterBusy(testType, totalSteps: 2);
         var buf = new StringBuilder();
         void capture(string l) => buf.AppendLine(l);
         _runner.OutputReceived += capture;
@@ -831,6 +905,7 @@ public partial class MainWindow : Window
 
             var rpt = _testReports.ParseResults(_android.ProjectPath, testType, startedAt);
             ShowSummary(rpt);
+            ReportTestResults(testType, rpt);
             string path = _testReports.SaveReport(
                 rpt, _android.ProjectPath, _android.SelectedVariant, buf.ToString());
 
@@ -871,21 +946,46 @@ public partial class MainWindow : Window
         finally
         {
             _runner.OutputReceived -= capture;
-            if (started) await StopGradleResourcesAfterTesting(testType);
+            if (started && _cts is { } operationCts)
+                await StopGradleResourcesAfterTesting(
+                    testType, operationCts.Token, advanceProgress: true);
             ExitBusy();
         }
     }
 
-    private async Task StopGradleResourcesAfterTesting(string ctx, PipelineLogger? logger = null)
+    private async Task StopGradleResourcesAfterTesting(
+        string ctx, CancellationToken operationToken, PipelineLogger? logger = null,
+        bool advanceProgress = false)
     {
+        if (operationToken.IsCancellationRequested)
+        {
+            Log($"Gradle daemon cleanup skipped after {ctx}: the operation was aborted.");
+            logger?.Line("Gradle daemon cleanup skipped because the operation was aborted.");
+            return;
+        }
+
         Log($"Stopping Gradle daemons after {ctx}…");
-        SetStatus("Stopping Gradle");
+        if (advanceProgress)
+            ReportOperationProgress(
+                Math.Min(_operationCurrent + 1, _operationTotal), _operationTotal,
+                "Stop Gradle daemons");
+        else
+            SetStatus("Stopping Gradle");
         try
         {
-            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(30));
-            await _android.StopDaemons(cts.Token);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(operationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(30));
+            await _android.StopDaemons(timeout.Token);
             Log("Gradle daemons stopped.");
             logger?.Line("Gradle daemons stopped.");
+            if (advanceProgress)
+                ReportOperationProgress(_operationCurrent, _operationTotal,
+                    "Stop Gradle daemons", completed: true, detail: "completed");
+        }
+        catch (OperationCanceledException) when (operationToken.IsCancellationRequested)
+        {
+            Log("Gradle daemon cleanup aborted.");
+            logger?.Line("Gradle daemon cleanup aborted.");
         }
         catch (Exception ex)
         {
@@ -1004,7 +1104,6 @@ public partial class MainWindow : Window
                 yes: "Run", danger: true))
             return;
 
-        EnterBusy("Full Test Run");
         string v = _android.SelectedVariant;
         var steps = new List<WorkflowStep>
         {
@@ -1017,6 +1116,7 @@ public partial class MainWindow : Window
                     Action = async ct => await PrepareInstrumentTestTarget(ct) != null ? 0 : 1 },
             new() { Name = $"Instrumented Tests ({v})", Action = _android.RunInstrumentTests, MaxRetries = 2 }
         };
+        EnterBusy("Full Test Run", steps.Count);
 
         try
         {
@@ -1046,7 +1146,8 @@ public partial class MainWindow : Window
         catch (Exception ex) { _toasts.Error("Full test run failed", Toaster.Friendly(ex), ex.ToString()); }
         finally
         {
-            await StopGradleResourcesAfterTesting("full test run");
+            if (_cts is { } operationCts)
+                await StopGradleResourcesAfterTesting("full test run", operationCts.Token);
             ExitBusy();
         }
     }
@@ -1104,7 +1205,7 @@ public partial class MainWindow : Window
     private async void LoadRepos_Click(object? s, RoutedEventArgs e)
     {
         string owner = MainGitHubOwnerBox.Text?.Trim() ?? "";
-        string token = MainGitHubTokenBox.Text ?? "";
+        string token = (MainGitHubTokenBox.Text ?? "").Trim();
         if (token.Length == 0)
         {
             _toasts.Warning("GitHub token required",
@@ -1117,6 +1218,7 @@ public partial class MainWindow : Window
             var repos = await _issueService.GetReposAsync(token, owner.Length == 0 ? null : owner, ct);
             _githubRepos.Clear();
             foreach (var r in repos) _githubRepos.Add(r);
+            GitHubAuthStatusLabel.Text = $"✓ Authenticated · {repos.Count} accessible repositories";
 
             var match = repos.FirstOrDefault(r =>
                 string.Equals(r.Name, _activeProfile.GitHubRepo, StringComparison.OrdinalIgnoreCase));
@@ -1130,19 +1232,42 @@ public partial class MainWindow : Window
         }, "Load Repos");
     }
 
-    private void SaveCreds_Click(object? s, RoutedEventArgs e)
+    private async void SaveCreds_Click(object? s, RoutedEventArgs e)
     {
         if (!RequireProject()) return;
-        try
+        string token = (MainGitHubTokenBox.Text ?? "").Trim();
+        if (token.Length == 0)
         {
-            SaveSourceTabToProfile();
-            _toasts.Success("Credentials saved",
-                $"Stored in {SecretStore.BackendDescription.ToLowerInvariant()}.");
+            _toasts.Warning("GitHub token required", "Paste the output of `gh auth token` first.");
+            return;
         }
-        catch (Exception ex)
+
+        await RunTask(async ct =>
         {
-            _toasts.Error("Could not save credentials", Toaster.Friendly(ex), ex.ToString());
-        }
+            await VerifyAndStoreGitHubToken(token, ct);
+        }, "Verify GitHub credentials");
+    }
+
+    private async void UseGhLogin_Click(object? s, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        await RunTask(async ct =>
+        {
+            string token = await _ghCredentials.ReadTokenAsync(ct);
+            await VerifyAndStoreGitHubToken(token, ct);
+        }, "Import GitHub CLI login");
+    }
+
+    private async Task VerifyAndStoreGitHubToken(string token, CancellationToken ct)
+    {
+        string login = await _issueService.GetAuthenticatedLoginAsync(token, ct);
+        MainGitHubTokenBox.Text = token;
+        if (string.IsNullOrWhiteSpace(MainGitHubOwnerBox.Text))
+            MainGitHubOwnerBox.Text = login;
+        SaveSourceTabToProfile();
+        GitHubAuthStatusLabel.Text = $"✓ Authenticated as @{login} · stored in system keyring";
+        _toasts.Success("GitHub credentials verified",
+            $"Signed in as @{login}. Stored in {SecretStore.BackendDescription.ToLowerInvariant()}.");
     }
 
     private void LoadFromEnv_Click(object? s, RoutedEventArgs e)
@@ -1684,8 +1809,28 @@ public partial class MainWindow : Window
     {
         var logger = new PipelineLogger("FP", ProjectName());
         _pipelineLogger = logger;
-        EnterBusy(statusText);
+        var phases = new List<string>();
+        if (req.Source.SyncBeforeRun) phases.Add("Sync source");
+        phases.Add("Stop Gradle daemons");
+        phases.Add("Clean");
+        if (req.RunUnitTests) phases.Add("Unit tests");
+        if (req.RunInstrumentTests)
+        {
+            phases.Add("Select instrument target");
+            phases.Add("Instrument tests");
+        }
+        if (req.RunUnitTests || req.RunInstrumentTests)
+            phases.Add("Stop test Gradle daemons");
+        phases.Add("Build signed APK");
+        phases.Add("Deploy to Firebase");
+
+        EnterBusy(statusText, phases.Count);
         var ct = _cts!.Token;
+        int phaseIndex = 0;
+        void Phase(string name) =>
+            ReportOperationProgress(++phaseIndex, phases.Count, name);
+        void PhaseComplete(string name, string? detail = null) =>
+            ReportOperationProgress(phaseIndex, phases.Count, name, completed: true, detail: detail);
         bool testsStarted = false, cleanupDone = false;
         TestReport? unitRpt = null, instrRpt = null;
 
@@ -1693,6 +1838,7 @@ public partial class MainWindow : Window
         {
             if (req.Source.SyncBeforeRun)
             {
+                Phase("Sync source");
                 logger.Section("SYNC SOURCE");
                 logger.Line($"Remote: {req.Source.Remote}  Branch: {req.Source.Branch}");
                 if (await _git.UpdateToRemoteBranch(
@@ -1700,14 +1846,17 @@ public partial class MainWindow : Window
                     return Fin(false, "Source update failed");
             }
 
+            Phase("Stop Gradle daemons");
             logger.Section("STOP DAEMONS");
             await _android.StopDaemons(ct);
 
+            Phase("Clean");
             logger.Section("CLEAN");
             if (await _android.CleanBuild(ct) != 0) return Fin(false, "Clean failed");
 
             if (req.RunUnitTests)
             {
+                Phase("Unit tests");
                 testsStarted = true;
                 logger.Section("UNIT TESTS");
                 var at = DateTime.Now;
@@ -1715,6 +1864,8 @@ public partial class MainWindow : Window
                 unitRpt = _testReports.ParseResults(req.ProjectPath, "UnitTests", at);
                 if (unitRpt.Total == 0) Log("[WARN] Unit tests produced NO results this run.");
                 ShowSummary(unitRpt);
+                PhaseComplete("Unit tests",
+                    unitRpt.Total > 0 ? $"{unitRpt.Passed} of {unitRpt.Total} passed" : "no test results");
                 _testReports.SaveReport(unitRpt, req.ProjectPath, req.ActiveVariant, "(FP)");
                 if ((unitRpt.Failed > 0 || c != 0) &&
                     !await HandleTestFailure("Unit Tests", unitRpt, req.FailureAction, logger))
@@ -1725,16 +1876,20 @@ public partial class MainWindow : Window
             if (req.RunInstrumentTests)
             {
                 testsStarted = true;
+                Phase("Select instrument target");
                 logger.Section("SELECT INSTRUMENT TARGET");
                 if (await PrepareInstrumentTestTarget(ct) == null)
                     return Fin(false, "No instrument test target");
 
+                Phase("Instrument tests");
                 logger.Section("INSTRUMENT TESTS");
                 var at = DateTime.Now;
                 int c = await _android.RunInstrumentTests(ct);
                 instrRpt = _testReports.ParseResults(req.ProjectPath, "InstrumentTests", at);
                 if (instrRpt.Total == 0) Log("[WARN] Instrument tests produced NO results this run.");
                 ShowSummary(instrRpt);
+                PhaseComplete("Instrument tests",
+                    instrRpt.Total > 0 ? $"{instrRpt.Passed} of {instrRpt.Total} passed" : "no test results");
                 _testReports.SaveReport(instrRpt, req.ProjectPath, req.ActiveVariant, "(FP)");
                 if ((instrRpt.Failed > 0 || c != 0) &&
                     !await HandleTestFailure("Instrument Tests", instrRpt, req.FailureAction, logger))
@@ -1744,11 +1899,13 @@ public partial class MainWindow : Window
 
             if (testsStarted)
             {
-                await StopGradleResourcesAfterTesting("pipeline tests", logger);
+                Phase("Stop test Gradle daemons");
+                await StopGradleResourcesAfterTesting("pipeline tests", ct, logger);
                 cleanupDone = true;
-                SetStatus(statusText);
+                ct.ThrowIfCancellationRequested();
             }
 
+            Phase("Build signed APK");
             logger.Section("BUILD SIGNED APK");
             if (await _android.BuildSignedApk(req.Signing, req.BuildVariants, ct) != 0)
                 return Fin(false, "Build failed");
@@ -1761,10 +1918,12 @@ public partial class MainWindow : Window
             if (apk == null) return Fin(false, $"APK for variant '{deployVariant}' not found after build");
             Log($"APK ({deployVariant}): {apk}");
 
+            Phase("Deploy to Firebase");
             logger.Section("DEPLOY TO FIREBASE");
             _firebase.CliPath = req.Firebase.CliPath;
             var dr = await _firebase.Distribute(apk, req.Firebase, ct);
             bool ok = dr.ExitCode == 0;
+            PhaseComplete("Deploy to Firebase", ok ? "completed" : $"exit {dr.ExitCode}");
             Log(ok ? "\nPIPELINE COMPLETE" : $"\nDeploy returned {dr.ExitCode}");
 
             if (ok)
@@ -1793,7 +1952,7 @@ public partial class MainWindow : Window
         finally
         {
             if (testsStarted && !cleanupDone)
-                await StopGradleResourcesAfterTesting("pipeline tests", logger);
+                await StopGradleResourcesAfterTesting("pipeline tests", ct, logger);
             await RefreshDeviceList();
             logger.Save();
             Log($"Pipeline log: {logger.FilePath}");
@@ -1940,13 +2099,23 @@ public partial class MainWindow : Window
         var ci = new AndroidCommandCenter.Ci.LocalCiRunner(
             _runner, _git, _android, _testReports, sink);
         ci.LogMessage += L;
-        ci.StageChanged += stage => Dispatcher.UIThread.Post(() =>
-            SetStatus($"CI: {stage.Name}"));
+        void UpdateCiProgress(AndroidCommandCenter.Ci.CiRunProgress progress) =>
+            Dispatcher.UIThread.Post(() =>
+            {
+                var stage = progress.Stage;
+                bool completed = stage.Status is not AndroidCommandCenter.Ci.StageStatus.Running;
+                string? detail = completed && !string.IsNullOrWhiteSpace(stage.Summary)
+                    ? stage.Summary : null;
+                ReportOperationProgress(progress.Current, progress.Total,
+                    $"CI: {stage.Name}", completed, detail);
+            });
+        ci.ProgressChanged += UpdateCiProgress;
 
         string originalProject = _android.ProjectPath;
         string originalVariant = _android.SelectedVariant;
         string? originalTarget = _android.TargetDevice;
-        EnterBusy(dryRun ? "Validating promotion" : "Running promotion CI");
+        EnterBusy(dryRun ? "Validating promotion" : "Running promotion CI",
+            AndroidCommandCenter.Ci.LocalCiRunner.DefaultStages.Count + 1);
         Log($"\n===== Promotion CI{(dryRun ? " [DRY RUN]" : "")} =====");
         try
         {
@@ -1980,6 +2149,7 @@ public partial class MainWindow : Window
         finally
         {
             ci.LogMessage -= L;
+            ci.ProgressChanged -= UpdateCiProgress;
             _android.ProjectPath = originalProject;
             _android.SelectedVariant = originalVariant;
             _android.TargetDevice = originalTarget;

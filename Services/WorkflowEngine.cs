@@ -6,6 +6,7 @@ namespace AndroidCommandCenter.Services;
 public class WorkflowEngine
 {
     public event Action<string>? LogMessage;
+    public event Action<WorkflowProgress>? ProgressChanged;
 
     public async Task<bool> ExecuteAsync(
         string workflowName,
@@ -25,6 +26,8 @@ public class WorkflowEngine
         {
             ct.ThrowIfCancellationRequested();
             var step = steps[i];
+            ProgressChanged?.Invoke(new WorkflowProgress(
+                i + 1, steps.Count, step.Name, WorkflowProgressState.Running));
 
             LogMessage?.Invoke("");
             LogMessage?.Invoke($">>> [{i + 1}/{steps.Count}] {step.Name}");
@@ -59,11 +62,15 @@ public class WorkflowEngine
             {
                 passed++;
                 LogMessage?.Invoke($">>> PASSED: {step.Name}");
+                ProgressChanged?.Invoke(new WorkflowProgress(
+                    i + 1, steps.Count, step.Name, WorkflowProgressState.Passed));
             }
             else
             {
                 failed++;
                 LogMessage?.Invoke($">>> FAILED: {step.Name}");
+                ProgressChanged?.Invoke(new WorkflowProgress(
+                    i + 1, steps.Count, step.Name, WorkflowProgressState.Failed));
                 if (step.StopOnFailure)
                 {
                     LogMessage?.Invoke(">>> WORKFLOW ABORTED");
@@ -87,3 +94,8 @@ public class WorkflowEngine
         LogMessage?.Invoke("========================================");
     }
 }
+
+public enum WorkflowProgressState { Running, Passed, Failed }
+
+public sealed record WorkflowProgress(
+    int Current, int Total, string Step, WorkflowProgressState State);

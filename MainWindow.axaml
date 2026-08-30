@@ -42,6 +42,15 @@
                 <TextBlock Text="STATUS" Classes="toolbar-label" Margin="0"/>
                 <TextBlock x:Name="StatusLabel" Text="Idle" Foreground="{StaticResource GreenBrush}"
                            FontWeight="Bold" FontSize="13" VerticalAlignment="Center"/>
+                <ProgressBar x:Name="OperationProgressBar" IsVisible="False"
+                             Minimum="0" Maximum="1" Value="0" Width="110" Height="7"
+                             VerticalAlignment="Center"/>
+                <TextBlock x:Name="OperationProgressLabel" IsVisible="False" Text=""
+                           Classes="metric-value" MaxWidth="310" TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center"/>
+                <Button x:Name="TopAbortButton" Classes="cmd danger compact" Content="⏹ Abort"
+                        Click="Cancel_Click" IsVisible="False" IsEnabled="False"
+                        ToolTip.Tip="Abort the current operation and terminate its child process tree"/>
               </StackPanel>
             </Border>
           </Grid>
@@ -97,7 +106,7 @@
           <DockPanel>
             <Border DockPanel.Dock="Bottom" BorderBrush="{StaticResource Surface0Brush}" BorderThickness="0,1,0,0" Padding="4,6">
               <StackPanel>
-                <Button x:Name="CancelButton" Classes="nav danger" Content="⏹ Cancel" Click="Cancel_Click"
+                <Button x:Name="CancelButton" Classes="nav danger" Content="⏹ Abort Current Operation" Click="Cancel_Click"
                         IsEnabled="False"/>
                 <Button Classes="nav" Content="🗑 Clear Log" Click="ClearLog_Click"/>
               </StackPanel>
@@ -231,9 +240,13 @@
                             <Button Classes="cmd" Content="Load Repos" Click="LoadRepos_Click"/>
                             <Button Classes="cmd" Content="Save Credentials" Click="SaveCreds_Click"
                                     ToolTip.Tip="Stores the token in the system keyring"/>
+                            <Button Classes="cmd" Content="Use gh Login" Click="UseGhLogin_Click"
+                                    ToolTip.Tip="Securely imports the active GitHub CLI login into the system keyring"/>
                             <Button Classes="cmd" Content="Load .env" Click="LoadFromEnv_Click"/>
                             <Button Classes="cmd" Content="Save .env" Click="SaveToEnv_Click"/>
                           </WrapPanel>
+                          <TextBlock x:Name="GitHubAuthStatusLabel" Classes="hint" Margin="0,6,0,0"
+                                     Text="Not authenticated"/>
                         </StackPanel>
                       </Border>
 

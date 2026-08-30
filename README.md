@@ -20,6 +20,12 @@ repository and token on the **Source** tab. Tokens and passwords are stored in
 the system keyring when libsecret is available; non-secret settings are stored
 under `~/.config/AndroidCommandCenter`.
 
+If GitHub CLI is installed, **Use gh Login** securely imports the active
+`gh auth` token, verifies it against the authenticated `/user` API, and stores
+it per project in the keyring. **Load Repos** uses the authenticated repository
+API so private repositories are included. The `.env` export remains an explicit
+plaintext fallback and is not written automatically.
+
 ## Promotion CI/CD
 
 Open **CI / CD → Promotion Settings** and set the remote plus the development,
@@ -39,6 +45,40 @@ so the selected developer checkout is never switched, reset, cleaned, or
 stashed. Main-branch movement is checked again immediately before promotion;
 concurrent remote changes cause a safe failure instead of an overwrite. The
 pipeline never force-pushes.
+
+Every long-running GUI operation exposes an Abort button in both the top status
+area and the sidebar. Aborting cancels the operation token and terminates the
+entire Gradle/ADB/Git/Firebase child process tree. Single Gradle actions show an
+active `1 of 1` status; workflows, dry runs, and promotion runs show the current
+phase as `n of y`. Completed test phases also report passed, failed, skipped,
+and total test counts. An aborted run does not start a new Gradle daemon-cleanup
+command afterward.
+
+### Release tags
+
+An existing tag is not required. In **Promotion Settings**, leave **Create
+release tag** enabled, use `v` as the prefix, and enable **Push promoted
+branches**. A dry run previews the tag without changing Git. A successful real
+promotion creates an annotated tag with this format and pushes it to `origin`:
+
+```text
+v<versionName>+<versionCode>
+```
+
+For example, `versionName "4.5.0"` and `versionCode 2` produce `v4.5.0+2`.
+The version-code gate requires the value on `staging` to be greater than the
+one on `main`; bump the staging build before the first promotion. To create an
+optional historical baseline tag for the version already on `main`, run:
+
+```bash
+git switch main
+git pull --ff-only origin main
+git tag -a v<current-versionName>+<current-versionCode> -m "Baseline release"
+git push origin v<current-versionName>+<current-versionCode>
+```
+
+Do not create the tag intended for the next promotion manually—the pipeline
+rejects duplicate release tags to prevent overwriting release history.
 
 The optional desktop schedule is evaluated while Android Command Center is
 open. Run manifests are stored under

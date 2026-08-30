@@ -63,6 +63,8 @@
           <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Margin="0,8,0,0">
             <TextBlock Classes="label" Text="Release tag prefix:"/>
             <TextBox x:Name="TagPrefixBox" Watermark="v"/>
+            <TextBlock Classes="hint" Margin="0,5,0,0" TextWrapping="Wrap"
+                       Text="No bootstrap tag is required. A successful promotion creates an annotated tag using &lt;prefix&gt;&lt;versionName&gt;+&lt;versionCode&gt; and pushes it when branch pushing is enabled. The dry run previews the exact tag first."/>
           </StackPanel>
         </Grid>
 
