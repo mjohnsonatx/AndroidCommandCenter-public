@@ -66,7 +66,7 @@ public class AvdManager
     {
         try
         {
-            string output = await RunAdbSilent("devices", ct);
+            string output = await RunAdbSilent(["devices", "-l"], ct);
             return ParseDeviceOutput(output);
         }
         catch { return []; }
@@ -254,7 +254,7 @@ public class AvdManager
             try
             {
                 string output = await RunAdbSilent(
-                    $"-s {serial} shell getprop sys.boot_completed", ct);
+                    ["-s", serial, "shell", "getprop", "sys.boot_completed"], ct);
 
                 if (output.Trim().Contains("1"))
                 {
@@ -307,7 +307,7 @@ public class AvdManager
             try
             {
                 string output = await RunAdbSilent(
-                    $"-s {serial} shell pm path android", ct);
+                    ["-s", serial, "shell", "pm", "path", "android"], ct);
 
                 if (output.Trim().StartsWith("package:", StringComparison.OrdinalIgnoreCase))
                 {

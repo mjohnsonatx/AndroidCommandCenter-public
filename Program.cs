@@ -9,10 +9,6 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
-        // Headless CI mode — lets systemd timers run the pipeline with no GUI.
-        if (args.Length > 0 && args[0] is "ci" or "rollback")
-            return Cli.CliEntry.RunAsync(args).GetAwaiter().GetResult();
-
         try
         {
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
