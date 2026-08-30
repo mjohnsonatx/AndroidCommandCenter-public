@@ -61,7 +61,7 @@ public sealed class SyncStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ct);
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
         if (!fetch.Ok) throw new StageFailedException($"git fetch failed:\n{fetch.Output}");
 
         foreach (var b in new[] { ctx.Staging, ctx.Main, ctx.Dev })
@@ -501,7 +501,7 @@ public sealed class PromoteStage : ICiStage
         var m = ctx.Manifest;
         await ctx.Git.EnsureIdentity(ctx.Repo, ct);
 
-        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ct);
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
         if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
         var checkout = await ctx.Git.Run(
             ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Main}");
@@ -605,7 +605,7 @@ public sealed class BackMergeStage : ICiStage
         var m = ctx.Manifest;
         if (ctx.DryRun) { rec.Status = StageStatus.Skipped; rec.Summary = $"[dry-run] would merge {ctx.Main} into {ctx.Dev}"; return; }
 
-        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ct);
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
         if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
         var checkout = await ctx.Git.Run(
             ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Dev}");

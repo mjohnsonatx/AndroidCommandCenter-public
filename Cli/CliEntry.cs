@@ -136,7 +136,11 @@ public static class CliEntry
                 var rb = new AndroidCommandCenter.Ci.RollbackService(git);
                 rb.LogMessage += Console.WriteLine;
                 RollbackPlan plan;
-                try { plan = await rb.PlanAsync(cfg, run, projectPath, cts.Token); }
+                try
+                {
+                    plan = await rb.PlanAsync(cfg, run, projectPath, cts.Token,
+                        profiles!.GitHubToken(profile!));
+                }
                 catch (Exception ex) { Console.Error.WriteLine($"✖ {ex.Message}"); return 4; }
 
                 Console.WriteLine(plan.Description);

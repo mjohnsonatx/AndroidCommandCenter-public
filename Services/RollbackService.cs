@@ -38,7 +38,7 @@ public sealed class RollbackService
         try
         {
             await _git.EnsureIdentity(projectPath, ct);
-            var fetch = await _git.Fetch(projectPath, m.Remote, ct);
+            var fetch = await _git.Fetch(projectPath, m.Remote, token, ct);
             if (!fetch.Ok) return new(false, $"Could not fetch {m.Remote}: {fetch.Output}");
 
             wt = await CiWorktree.CreateAsync(_git, projectPath, m.ProjectName + "-rollback", Log, ct);

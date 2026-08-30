@@ -19,7 +19,8 @@ public class GitService
         string projectPath,
         string remoteName,
         string branchName,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? gitHubToken = null)
     {
         remoteName = GitNames.Require(remoteName, "remote");
         branchName = GitNames.Require(branchName, "branch");
@@ -33,13 +34,17 @@ public class GitService
             return code;
         }
 
-        code = await RunGit(projectPath, ["fetch", "--prune", remoteName, branchName], ct);
+        var fetch = await Fetch(projectPath, remoteName, gitHubToken, ct, branchName);
+        code = fetch.ExitCode;
         if (code != 0) return code;
 
         code = await RunGit(projectPath, ["checkout", branchName], ct);
         if (code != 0) return code;
 
-        code = await RunGit(projectPath, ["pull", "--ff-only", remoteName, branchName], ct);
+        // Fetch already updated the remote-tracking ref. Fast-forward locally
+        // without doing a second network operation (and a second auth prompt).
+        code = await RunGit(projectPath,
+            ["merge", "--ff-only", $"{remoteName}/{branchName}"], ct);
         if (code == 0)
             LogMessage?.Invoke($"Repo is now at current {remoteName}/{branchName} head.");
 
@@ -105,10 +110,36 @@ public class GitService
         return result.Output.TrimEnd();
     }
 
-    public Task<GitResult> Fetch(string projectPath, string remote, CancellationToken ct)
+    public Task<GitResult> Fetch(string projectPath, string remote, CancellationToken ct) =>
+        Fetch(projectPath, remote, null, ct);
+
+    public async Task<GitResult> Fetch(
+        string projectPath, string remote, string? gitHubToken,
+        CancellationToken ct, string? branch = null)
     {
         remote = GitNames.Require(remote, "remote");
-        return Run(projectPath, ct, "fetch", "--prune", "--tags", remote);
+        if (branch is not null) branch = GitNames.Require(branch, "branch");
+
+        var args = new List<string> { "fetch", "--prune", "--tags", remote };
+        if (branch is not null)
+            args.Add($"+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+
+        string remoteUrl = (await Run(projectPath, ct,
+            "remote", "get-url", remote)).Output.Trim();
+        bool https = remoteUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
+        if (https && !string.IsNullOrWhiteSpace(gitHubToken))
+        {
+            LogMessage?.Invoke($"$ git fetch --prune --tags {remote}" +
+                               (branch is null ? "" : $" {branch}") + " (authenticated)");
+            return await RunWithToken(projectPath, args, gitHubToken, ct);
+        }
+
+        // Never invoke a host-specific credential helper from a Flatpak
+        // sandbox. Public and SSH remotes still work; private HTTPS remotes get
+        // a deterministic authentication error instead of /usr/bin/gh noise.
+        LogMessage?.Invoke($"$ git fetch --prune --tags {remote}" +
+                           (branch is null ? "" : $" {branch}"));
+        return await RunCredentialIsolated(projectPath, args, ct);
     }
 
     public async Task<bool> BranchExistsRemote(
@@ -229,6 +260,66 @@ public class GitService
         if (string.IsNullOrWhiteSpace(token))
             return new GitResult(2, "GitHub token is empty.");
 
+        string url = $"https://github.com/{owner}/{repository}.git";
+        LogMessage?.Invoke($"$ git push --porcelain {owner}/{repository} {refspec} (authenticated)");
+        return await RunWithToken(projectPath,
+            ["push", "--porcelain", url, refspec], token, ct);
+    }
+
+    public async Task<GitResult> RevertMerge(
+        string projectPath, string mergeRevision, CancellationToken ct)
+    {
+        mergeRevision = RequireRevision(mergeRevision);
+        return await Run(projectPath, ct, "revert", "-m", "1", "--no-edit", mergeRevision);
+    }
+
+    private Task<int> RunGit(
+        string projectPath, IReadOnlyList<string> arguments, CancellationToken ct) =>
+        _runner.RunAsync("git", arguments, projectPath, ct);
+
+    private Task<(int ExitCode, string Output)> CaptureGit(
+        string projectPath, IReadOnlyList<string> arguments, CancellationToken ct) =>
+        _runner.RunAndCaptureAsync("git", arguments, projectPath, ct);
+
+    private async Task<GitResult> RunCredentialIsolated(
+        string projectPath, IReadOnlyList<string> arguments, CancellationToken ct)
+    {
+        string rejectAskPass = Path.Combine(Path.GetTempPath(),
+            $"acc-git-no-prompt-{Guid.NewGuid():N}" + (Platform.IsWindows ? ".cmd" : ".sh"));
+        try
+        {
+            string script = Platform.IsWindows
+                ? "@exit /b 1\r\n"
+                : "#!/bin/sh\nexit 1\n";
+            await File.WriteAllTextAsync(rejectAskPass, script, ct);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(rejectAskPass,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            var safeArgs = new List<string> { "-c", "credential.helper=" };
+            safeArgs.AddRange(arguments);
+            var env = new Dictionary<string, string>
+            {
+                ["GIT_TERMINAL_PROMPT"] = "0",
+                ["GIT_ASKPASS"] = rejectAskPass
+            };
+            var (code, output) = await _runner.RunAndCaptureAsync(
+                "git", safeArgs, projectPath, ct, env, echoCommand: false);
+            return new GitResult(code, output);
+        }
+        finally
+        {
+            try { File.Delete(rejectAskPass); } catch { }
+        }
+    }
+
+    private async Task<GitResult> RunWithToken(
+        string projectPath, IReadOnlyList<string> arguments,
+        string token, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(token))
+            return new GitResult(2, "GitHub token is empty.");
+
         string askPass = Path.Combine(Path.GetTempPath(),
             $"acc-git-askpass-{Guid.NewGuid():N}" + (Platform.IsWindows ? ".cmd" : ".sh"));
         try
@@ -248,11 +339,14 @@ public class GitService
                 ["GIT_TERMINAL_PROMPT"] = "0",
                 ["ACC_GIT_PASSWORD"] = token
             };
-            string url = $"https://github.com/{owner}/{repository}.git";
+            var safeArgs = new List<string>
+            {
+                "-c", "credential.helper=",
+                "-c", "credential.username=x-access-token"
+            };
+            safeArgs.AddRange(arguments);
             var (code, output) = await _runner.RunAndCaptureAsync(
-                "git",
-                ["-c", "credential.username=x-access-token", "push", "--porcelain", url, refspec],
-                projectPath, ct, env, echoCommand: false);
+                "git", safeArgs, projectPath, ct, env, echoCommand: false);
             return new GitResult(code, output);
         }
         finally
@@ -260,21 +354,6 @@ public class GitService
             try { File.Delete(askPass); } catch { }
         }
     }
-
-    public async Task<GitResult> RevertMerge(
-        string projectPath, string mergeRevision, CancellationToken ct)
-    {
-        mergeRevision = RequireRevision(mergeRevision);
-        return await Run(projectPath, ct, "revert", "-m", "1", "--no-edit", mergeRevision);
-    }
-
-    private Task<int> RunGit(
-        string projectPath, IReadOnlyList<string> arguments, CancellationToken ct) =>
-        _runner.RunAsync("git", arguments, projectPath, ct);
-
-    private Task<(int ExitCode, string Output)> CaptureGit(
-        string projectPath, IReadOnlyList<string> arguments, CancellationToken ct) =>
-        _runner.RunAndCaptureAsync("git", arguments, projectPath, ct);
 
     private static string RequireRevision(string value)
     {

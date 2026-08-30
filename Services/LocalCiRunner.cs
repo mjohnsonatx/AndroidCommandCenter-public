@@ -68,7 +68,8 @@ public sealed class LocalCiRunner
 
                 await _git.EnsureIdentity(req.ProjectPath, ct);
 
-                var fetch = await _git.Fetch(req.ProjectPath, cfg.Remote, ct);
+                var fetch = await _git.Fetch(
+                    req.ProjectPath, cfg.Remote, req.GitHubToken, ct);
                 if (!fetch.Ok) return Fail(st, $"Could not fetch {cfg.Remote}: {fetch.Output}");
 
                 foreach (var b in new[] { cfg.DevBranch, cfg.StagingBranch, cfg.MainBranch })

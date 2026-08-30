@@ -26,6 +26,12 @@ it per project in the keyring. **Load Repos** uses the authenticated repository
 API so private repositories are included. The `.env` export remains an explicit
 plaintext fallback and is not written automatically.
 
+Rider's Flatpak cannot execute host-only credential-helper paths such as
+`/usr/bin/gh` or `/usr/bin/ksshaskpass`. GitHub HTTPS fetches and pushes therefore
+clear external helpers for that one command and use the verified project token
+through a temporary askpass process. The token is never placed in a command
+line, remote URL, or application log.
+
 ## Promotion CI/CD
 
 Open **CI / CD → Promotion Settings** and set the remote plus the development,

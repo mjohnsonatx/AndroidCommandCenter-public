@@ -1376,7 +1376,9 @@ public partial class MainWindow : Window
         try
         {
             Log($"\n===== Pull {remote}/{branch} into LOCAL project =====");
-            int code = await _git.UpdateToRemoteBranch(_android.ProjectPath, remote, branch, _cts!.Token);
+            int code = await _git.UpdateToRemoteBranch(
+                _android.ProjectPath, remote, branch, _cts!.Token,
+                _profiles.GitHubToken(_activeProfile));
             if (code == 0)
             {
                 string sha = await _git.ShortSha(_android.ProjectPath, "HEAD", _cts.Token);
@@ -1842,7 +1844,8 @@ public partial class MainWindow : Window
                 logger.Section("SYNC SOURCE");
                 logger.Line($"Remote: {req.Source.Remote}  Branch: {req.Source.Branch}");
                 if (await _git.UpdateToRemoteBranch(
-                        req.ProjectPath, req.Source.Remote, req.Source.Branch, ct) != 0)
+                        req.ProjectPath, req.Source.Remote, req.Source.Branch, ct,
+                        req.Source.Token) != 0)
                     return Fin(false, "Source update failed");
             }
 
@@ -2174,7 +2177,7 @@ public partial class MainWindow : Window
         try
         {
             plan = await rollback.PlanAsync(_settings.Pipeline, run, _android.ProjectPath,
-                CancellationToken.None);
+                CancellationToken.None, _profiles.GitHubToken(_activeProfile));
         }
         catch (Exception ex)
         {

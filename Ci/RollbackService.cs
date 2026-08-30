@@ -20,12 +20,14 @@ public sealed class RollbackService
 
     public RollbackService(GitService git) => _git = git;
 
-    public async Task<RollbackPlan> PlanAsync(CiPipelineConfig cfg, CiRunManifest run, string repo, CancellationToken ct)
+    public async Task<RollbackPlan> PlanAsync(
+        CiPipelineConfig cfg, CiRunManifest run, string repo,
+        CancellationToken ct, string? gitHubToken = null)
     {
         if (run.MergeSha is null)
             throw new InvalidOperationException($"Run {run.RunId} has no merge commit to revert (it failed before promotion or was a dry run).");
 
-        var fetch = await _git.Fetch(repo, cfg.Remote, ct);
+        var fetch = await _git.Fetch(repo, cfg.Remote, gitHubToken, ct);
         if (!fetch.Ok) throw new InvalidOperationException($"fetch failed:\n{fetch.Output}");
 
         string head = await _git.RevParse(repo, $"{cfg.Remote}/{cfg.MainBranch}", ct);
@@ -54,7 +56,7 @@ public sealed class RollbackService
         string gitHubToken, bool push, string reason, CancellationToken ct)
     {
         var run = plan.Run;
-        var refresh = await _git.Fetch(repo, cfg.Remote, ct);
+        var refresh = await _git.Fetch(repo, cfg.Remote, gitHubToken, ct);
         if (!refresh.Ok)
             return new(false, $"Could not refresh {cfg.Remote}:\n{refresh.Output}", null, null);
 
@@ -129,7 +131,7 @@ public sealed class RollbackService
         string repo, CiPipelineConfig cfg, ProjectProfile profile, string gitHubToken,
         CiRunManifest run, string revertSha, CancellationToken ct)
     {
-        var fetch = await _git.Fetch(repo, cfg.Remote, ct);
+        var fetch = await _git.Fetch(repo, cfg.Remote, gitHubToken, ct);
         if (!fetch.Ok) return $"fetch failed: {fetch.Output}";
         var checkout = await _git.Run(repo, ct, "checkout", "--detach",
             $"{cfg.Remote}/{cfg.DevBranch}");
