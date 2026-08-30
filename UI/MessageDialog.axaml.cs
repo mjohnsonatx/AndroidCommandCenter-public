@@ -9,7 +9,7 @@ namespace AndroidCommandCenter.UI;
 
 public partial class MessageDialog : Window
 {
-    private MessageDialog() => InitializeComponent();
+    public MessageDialog() => InitializeComponent();
 
     public sealed record Options(
         string Title,

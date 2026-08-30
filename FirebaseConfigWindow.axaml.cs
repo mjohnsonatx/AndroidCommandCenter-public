@@ -16,6 +16,8 @@ public partial class FirebaseConfigWindow : Window
     private readonly FieldValidator _v;
     private readonly bool _ready;
 
+    public FirebaseConfigWindow() : this(new FirebaseConfigDraft("", "", "firebase")) { }
+
     public FirebaseConfigWindow(FirebaseConfigDraft draft)
     {
         InitializeComponent();

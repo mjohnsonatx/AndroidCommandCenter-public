@@ -1,4 +1,6 @@
 using System.IO;
+using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using AndroidCommandCenter.Models;
 using AndroidCommandCenter.Services;
@@ -54,12 +56,48 @@ public sealed class LocalCiRunner
         };
         manifest.ManifestPath = Path.Combine(Paths.CiRuns, $"{manifest.RunId}.json");
 
-        _android.ProjectPath = profile.ProjectPath;
+        CiWorktree worktree;
+        FileStream? runLock = null;
+        try
+        {
+            runLock = AcquireRunLock(profile.ProjectPath);
+            worktree = await CiWorktree.CreateAsync(
+                _git, profile.ProjectPath, project,
+                m => LogMessage?.Invoke(m), ct, keep: true);
+        }
+        catch (OperationCanceledException)
+        {
+            runLock?.Dispose();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            runLock?.Dispose();
+            var failed = new StageRecord
+            {
+                Name = "Prepare isolated worktree",
+                Status = StageStatus.Failed,
+                StartedAt = DateTime.UtcNow,
+                FinishedAt = DateTime.UtcNow,
+                Summary = ex.Message,
+                Failure = new FailureContext { Message = ex.Message, Exception = ex.ToString() }
+            };
+            manifest.Stages.Add(failed);
+            manifest.FailedStage = failed.Name;
+            manifest.Result = $"Failed: {failed.Name} — {ex.Message}";
+            manifest.FinishedAt = DateTime.UtcNow;
+            logger.Line(manifest.Result);
+            logger.Save();
+            SaveManifest(manifest);
+            return manifest;
+        }
+
+        _android.ProjectPath = worktree.Path;
         _android.SelectedVariant = config.GateVariant;
 
         var ctx = new CiContext
         {
-            Config = config, Profile = profile, ProjectPath = profile.ProjectPath,
+            Config = config, Profile = profile, ProjectPath = worktree.Path,
             GitHubToken = gitHubToken, DryRun = dryRun, Manifest = manifest,
             Runner = _runner, Git = _git, Android = _android, TestReports = _tests,
             Logger = logger, Log = m => LogMessage?.Invoke(m)
@@ -67,10 +105,6 @@ public sealed class LocalCiRunner
 
         ctx.Info($"CI run {manifest.RunId} — {project} — {config.StagingBranch} → {config.MainBranch}" +
                  (dryRun ? " [DRY RUN]" : ""));
-
-        // Remember where we were so the working tree is restored afterwards.
-        string? originalBranch = null;
-        try { originalBranch = await _git.CurrentBranch(profile.ProjectPath, ct); } catch { }
 
         try
         {
@@ -155,13 +189,7 @@ public sealed class LocalCiRunner
             // Stop gradle daemons — a scheduled run must not leave 3 GB of JVMs behind.
             try { using var c = new CancellationTokenSource(20_000); await _android.StopDaemons(c.Token); } catch { }
 
-            // Restore the user's branch so a GUI run doesn't leave them on `main`.
-            if (originalBranch is { Length: > 0 } && originalBranch != "HEAD")
-                try { await _git.Run(profile.ProjectPath, CancellationToken.None, "checkout", "-q", originalBranch); } catch { }
-
             ctx.Info($"Result: {manifest.Result} ({manifest.DurationSeconds:F0}s)");
-            logger.Save();
-            SaveManifest(manifest);
 
             if (_firestore != null && config.PublishToFirestore)
             {
@@ -172,8 +200,39 @@ public sealed class LocalCiRunner
                 }
                 catch (Exception ex) { ctx.Info($"[warn] Firestore publish failed: {ex.Message}"); }
             }
+
+            logger.Save();
+            SaveManifest(manifest);
+            try { await worktree.DisposeAsync(); }
+            finally { runLock?.Dispose(); }
         }
         return manifest;
+    }
+
+    private static FileStream AcquireRunLock(string projectPath)
+    {
+        string locks = Path.Combine(Paths.StateDir, "ci-locks");
+        Directory.CreateDirectory(locks);
+        string canonical = Path.GetFullPath(projectPath);
+        string id = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical)))[..16];
+        string path = Path.Combine(locks, $"{id}.lock");
+        try
+        {
+            var stream = new FileStream(path, FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None);
+            stream.SetLength(0);
+            using var writer = new StreamWriter(stream, Encoding.UTF8, 1024, leaveOpen: true);
+            writer.WriteLine($"pid={Environment.ProcessId}");
+            writer.WriteLine($"project={canonical}");
+            writer.WriteLine($"started={DateTime.UtcNow:O}");
+            writer.Flush();
+            stream.Position = 0;
+            return stream;
+        }
+        catch (IOException ex)
+        {
+            throw new InvalidOperationException(
+                "Another CI/CD run is already active for this project. Wait for it to finish or cancel it first.", ex);
+        }
     }
 
     private static string FirstLine(string s) => s.Split('\n')[0].Trim();
@@ -194,6 +253,6 @@ public sealed class LocalCiRunner
             ? Directory.GetFiles(Paths.CiRuns, "*.json")
                 .OrderByDescending(f => f)
                 .Select(f => { try { return JsonSerializer.Deserialize<CiRunManifest>(File.ReadAllText(f), Json); } catch { return null; } })
-                .Where(m => m != null)!
+                .OfType<CiRunManifest>()
             : [];
 }

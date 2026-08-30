@@ -17,6 +17,13 @@ public partial class FullPipelineWindow : Window
     private readonly bool _ready;
     private CancellationTokenSource? _branchCts;
 
+    public FullPipelineWindow() : this(new PipelineDialogModel(
+        new SigningDraft("", "", "", "", ImmutableArray<string>.Empty),
+        new FirebaseConfigDraft("", "", "firebase"),
+        new DeployTargets("", "", ""),
+        new GitSourceDraft(false, "origin", "main", "", "", ""),
+        [], true, false, TestFailureAction.AutomaticBounceBack)) { }
+
     public FullPipelineWindow(PipelineDialogModel model)
     {
         InitializeComponent();
@@ -48,7 +55,7 @@ public partial class FullPipelineWindow : Window
         {
             Name = v,
             IsSelected = selected.Contains(v),
-            Changed = () => { if (_ready) _v.Run(); }
+            Changed = ValidateChoices
         }).ToList();
         VariantList.ItemsSource = _choices;
 
@@ -84,6 +91,8 @@ public partial class FullPipelineWindow : Window
         _v.Run();
         UpdateDeployVariantInfo();
     }
+
+    private void ValidateChoices() { if (_ready) _v.Run(); }
 
     private static string? ValidateServiceAccount(string v)
     {

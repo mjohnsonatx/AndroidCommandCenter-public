@@ -154,6 +154,17 @@
 
                 <Expander Classes="nav" Header="CI / CD">
                   <StackPanel>
+                    <Button Classes="nav" Content="Promotion Settings"
+                            Click="PromotionConfig_Click"/>
+                    <Button Classes="nav accent" Content="Validate Promotion (Dry Run)"
+                            Click="PromotionDryRun_Click"/>
+                    <Button Classes="nav green" Content="▶ Promote Staging → Main"
+                            Click="PromotionRun_Click"/>
+                    <Button Classes="nav danger" Content="Rollback Last Promotion"
+                            Click="RollbackPromotion_Click"/>
+                    <Button Classes="nav" Content="Open CI Run Records"
+                            Click="OpenCiRuns_Click"/>
+                    <Separator/>
                     <Button x:Name="FirebaseConfigButton" Classes="nav" Content="Firebase Config"
                             Click="FirebaseConfig_Click"/>
                     <Button x:Name="BuildSignedButton" Classes="nav" Content="Build Signed APK"

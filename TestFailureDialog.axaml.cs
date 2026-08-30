@@ -7,6 +7,8 @@ public partial class TestFailureDialog : Window
 {
     private readonly string _details;
 
+    public TestFailureDialog() : this("Test failure", "", false) { }
+
     public TestFailureDialog(string title, string details, bool requireConfirm, int failed = 0, int total = 0)
     {
         InitializeComponent();

@@ -182,6 +182,7 @@ public class CacheManager
         }
         static void TryChmod(string p, UnixFileMode mode)
         {
+            if (OperatingSystem.IsWindows()) return;
             try { File.SetUnixFileMode(p, File.GetUnixFileMode(p) | mode); } catch { }
         }
     }

@@ -63,8 +63,14 @@ public sealed class SyncStage : ICiStage
             if (!await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, b, ct))
                 throw new StageFailedException($"Branch '{b}' does not exist on '{ctx.Remote}'.");
 
-        var reset = await ctx.Git.ResetToRemote(ctx.Repo, ctx.Remote, ctx.Staging, ct);
+        var checkout = await ctx.Git.Run(
+            ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Staging}");
+        if (!checkout.Ok)
+            throw new StageFailedException($"Could not check out {ctx.Remote}/{ctx.Staging}:\n{checkout.Output}");
+        var reset = await ctx.Git.Run(
+            ctx.Repo, ct, "reset", "--hard", $"{ctx.Remote}/{ctx.Staging}");
         if (!reset.Ok) throw new StageFailedException($"Could not sync {ctx.Staging}:\n{reset.Output}");
+        await ctx.Git.Run(ctx.Repo, ct, "clean", "-fd");
 
         var m = ctx.Manifest;
         m.StagingSha = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
@@ -417,6 +423,17 @@ public sealed class InstrumentTestStage : ICiStage
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
         ctx.Android.SelectedVariant = ctx.Config.GateVariant;
+        var avd = new AvdManager(ctx.Runner, ctx.Android.AdbPath, ctx.Android.EmulatorPath);
+        avd.LogMessage += ctx.Info;
+        var devices = await avd.GetDevicesSilent(ct);
+        string? serial = devices.FirstOrDefault(d => d.IsEmulator && d.IsOnline)?.Serial
+                         ?? await avd.EnsureEmulatorReadyForTests(null, ct);
+        if (serial is null)
+            throw new StageFailedException(
+                "No online emulator is available. CI will not run instrument tests on a physical phone.");
+        ctx.Android.TargetDevice = serial;
+        rec.Data["emulator"] = serial;
+
         var at = DateTime.Now;
         int code = await ctx.Android.RunInstrumentTests(ct);
         var rpt = ctx.TestReports.ParseResults(ctx.ProjectPath, "InstrumentTests", at);
@@ -479,7 +496,12 @@ public sealed class PromoteStage : ICiStage
         var m = ctx.Manifest;
         await ctx.Git.EnsureIdentity(ctx.Repo, ct);
 
-        var sync = await ctx.Git.ResetToRemote(ctx.Repo, ctx.Remote, ctx.Main, ct);
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ct);
+        if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
+        var checkout = await ctx.Git.Run(
+            ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Main}");
+        if (!checkout.Ok) throw new StageFailedException($"Could not check out {ctx.Main}:\n{checkout.Output}");
+        var sync = await ctx.Git.Run(ctx.Repo, ct, "reset", "--hard", $"{ctx.Remote}/{ctx.Main}");
         if (!sync.Ok) throw new StageFailedException($"Could not sync {ctx.Main}:\n{sync.Output}");
 
         // Guard against a race: main moved since Sync.
@@ -500,7 +522,7 @@ public sealed class PromoteStage : ICiStage
             return;
         }
 
-        var merge = await ctx.Git.MergeNoFf(ctx.Repo, ctx.Staging, msg, ct);
+        var merge = await ctx.Git.MergeNoFf(ctx.Repo, m.StagingSha, msg, ct);
         if (!merge.Ok) throw new StageFailedException($"Merge {ctx.Staging} → {ctx.Main} failed:\n{merge.Output}");
 
         m.MergeSha = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
@@ -519,7 +541,7 @@ public sealed class PromoteStage : ICiStage
 
         if (ctx.Config.PushMain)
         {
-            var push = await Push(ctx, $"{ctx.Main}:{ctx.Main}", ct);
+            var push = await Push(ctx, $"HEAD:{ctx.Main}", ct);
             if (!push.Ok)
             {
                 // Local main is now ahead of remote with an unpushed merge. Roll
@@ -549,19 +571,19 @@ public sealed class PromoteStage : ICiStage
             : $"{ctx.Config.TagPrefix}{name}-{m.StagingSha[..8]}";
     }
 
-    internal static Task<GitResult> Push(CiContext ctx, string refspec, CancellationToken ct)
+    internal static async Task<GitResult> Push(CiContext ctx, string refspec, CancellationToken ct)
     {
         bool https = true;
         try
         {
-            var url = ctx.Git.Run(ctx.Repo, ct, "remote", "get-url", ctx.Remote).Result.Output;
+            var url = (await ctx.Git.Run(ctx.Repo, ct, "remote", "get-url", ctx.Remote)).Output;
             https = url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
         }
         catch { }
 
         return https && !string.IsNullOrWhiteSpace(ctx.GitHubToken)
-            ? ctx.Git.PushWithToken(ctx.Repo, ctx.Profile.GitHubOwner, ctx.Profile.GitHubRepo, ctx.GitHubToken, refspec, ct)
-            : ctx.Git.Push(ctx.Repo, ctx.Remote, refspec, ct);
+            ? await ctx.Git.PushWithToken(ctx.Repo, ctx.Profile.GitHubOwner, ctx.Profile.GitHubRepo, ctx.GitHubToken, refspec, ct)
+            : await ctx.Git.Push(ctx.Repo, ctx.Remote, refspec, ct);
     }
 }
 
@@ -578,10 +600,15 @@ public sealed class BackMergeStage : ICiStage
         var m = ctx.Manifest;
         if (ctx.DryRun) { rec.Status = StageStatus.Skipped; rec.Summary = $"[dry-run] would merge {ctx.Main} into {ctx.Dev}"; return; }
 
-        var sync = await ctx.Git.ResetToRemote(ctx.Repo, ctx.Remote, ctx.Dev, ct);
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ct);
+        if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
+        var checkout = await ctx.Git.Run(
+            ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Dev}");
+        if (!checkout.Ok) throw new StageFailedException($"Could not check out {ctx.Dev}:\n{checkout.Output}");
+        var sync = await ctx.Git.Run(ctx.Repo, ct, "reset", "--hard", $"{ctx.Remote}/{ctx.Dev}");
         if (!sync.Ok) throw new StageFailedException($"Could not sync {ctx.Dev}:\n{sync.Output}");
 
-        var merge = await ctx.Git.MergeNoFf(ctx.Repo, ctx.Main,
+        var merge = await ctx.Git.MergeNoFf(ctx.Repo, m.MergeSha!,
             $"Back-merge {ctx.Main} ({m.Tag ?? m.MergeSha?[..8]}) into {ctx.Dev}\n\nCI run {m.RunId}", ct);
         if (!merge.Ok)
         {
@@ -599,7 +626,7 @@ public sealed class BackMergeStage : ICiStage
 
         if (ctx.Config.PushMain)
         {
-            var push = await PromoteStage.Push(ctx, $"{ctx.Dev}:{ctx.Dev}", ct);
+            var push = await PromoteStage.Push(ctx, $"HEAD:{ctx.Dev}", ct);
             if (!push.Ok)
             {
                 rec.Status = StageStatus.Warning;
@@ -607,6 +634,7 @@ public sealed class BackMergeStage : ICiStage
                 return;
             }
         }
-        rec.Summary = $"{ctx.Dev} ← {ctx.Main} merge {m.BackMergeSha[..8]}, pushed.";
+        rec.Summary = $"{ctx.Dev} ← {ctx.Main} merge {m.BackMergeSha[..8]}" +
+                      (ctx.Config.PushMain ? ", pushed." : ", NOT pushed.");
     }
 }

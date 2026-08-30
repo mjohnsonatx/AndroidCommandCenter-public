@@ -15,6 +15,11 @@ public partial class AutomationWindow : Window
     private readonly bool _hasStoredSmtpPassword;
     private CancellationTokenSource? _branchCts;
 
+    public AutomationWindow() : this(new AutomationDraft(
+        "origin", "main", "", "", "", false, "02:00",
+        TestFailureAction.AutomaticBounceBack,
+        new EmailDraft(false, "", "", "", 587, true, "", "")), false) { }
+
     public AutomationWindow(AutomationDraft draft, bool hasStoredSmtpPassword)
     {
         InitializeComponent();

@@ -14,7 +14,7 @@ public sealed class StageOutput
 
     // First-error heuristics across gradle, git, adb, lint, and our own markers.
     private static readonly Regex ErrorMarker = new(
-        @"(^|\s)(FAILED|FAILURE:|BUILD FAILED|error:|Error:|ERROR|\[ERROR\]|\[ERR\]|fatal:|CONFLICT|" +
+        @"(^|\s)(FAILED|FAILURE:|BUILD FAILED|error:|Error:|ERROR|\[ERROR\]|fatal:|CONFLICT|" +
         @"Exception|Caused by:|Execution failed|What went wrong|Tests? failed|>>> FAILED|\[X\])",
         RegexOptions.Compiled);
 

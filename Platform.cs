@@ -28,7 +28,7 @@ public static class Platform
     /// </summary>
     public static void EnsureExecutable(string path)
     {
-        if (IsWindows || !File.Exists(path)) return;
+        if (OperatingSystem.IsWindows() || !File.Exists(path)) return;
         try
         {
             var mode = File.GetUnixFileMode(path);

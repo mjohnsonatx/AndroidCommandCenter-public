@@ -158,7 +158,7 @@ public sealed class SecretStore
                 }
                 var fresh = RandomNumberGenerator.GetBytes(32);
                 File.WriteAllBytes(KeyFile, fresh);
-                if (!Platform.IsWindows)
+                if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(KeyFile,
                         UnixFileMode.UserRead | UnixFileMode.UserWrite);
                 return fresh;
@@ -200,7 +200,7 @@ public sealed class SecretStore
                 {
                     fs.Write(nonce); fs.Write(tag); fs.Write(ct);
                 }
-                if (!Platform.IsWindows)
+                if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(tmp,
                         UnixFileMode.UserRead | UnixFileMode.UserWrite);
                 File.Move(tmp, DataFile, overwrite: true);  // atomic replace

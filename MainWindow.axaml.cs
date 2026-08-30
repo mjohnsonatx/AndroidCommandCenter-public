@@ -100,7 +100,6 @@ public partial class MainWindow : Window
             h => _emailNotifications.LogMessage += h,
             h => _env.LogMessage += h,
             h => _issueService.LogMessage += h,
-            h => _deploymentReports.LogMessage += h,
             h => _profiles.LogMessage += h,
         }) hook(L);
 
@@ -126,7 +125,11 @@ public partial class MainWindow : Window
         _deviceTimer.Tick += async (_, _) => await RefreshDeviceList();
 
         _automationTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
-        _automationTimer.Tick += async (_, _) => await CheckScheduledAutomation();
+        _automationTimer.Tick += async (_, _) =>
+        {
+            await CheckScheduledAutomation();
+            await CheckScheduledPromotion();
+        };
 
         Opened += OnOpened;
     }
@@ -275,6 +278,10 @@ public partial class MainWindow : Window
         _isRunning = true;
         _cts = new CancellationTokenSource();
         SidebarOps.IsEnabled = false;
+        ProjectCombo.IsEnabled = false;
+        VariantCombo.IsEnabled = false;
+        AvdCombo.IsEnabled = false;
+        DeviceCombo.IsEnabled = false;
         CancelButton.IsEnabled = true;
         SetStatus(status);
     }
@@ -283,6 +290,10 @@ public partial class MainWindow : Window
     {
         _isRunning = false;
         SidebarOps.IsEnabled = true;
+        ProjectCombo.IsEnabled = true;
+        VariantCombo.IsEnabled = true;
+        AvdCombo.IsEnabled = true;
+        DeviceCombo.IsEnabled = true;
         CancelButton.IsEnabled = false;
         SetStatus("Idle");
         _cts?.Dispose();
@@ -1783,7 +1794,7 @@ public partial class MainWindow : Window
             var r = new PipelineRunResult(success, status, logger.FilePath);
             RecordDeployment(r, unitRpt, instrRpt);
             if (!success && status != "Cancelled")
-                _toasts.Error($"Pipeline stopped: {status}", null,
+                _toasts.Error($"Pipeline stopped: {status}", message: null,
                     actionLabel: "Open log", action: () => Platform.OpenFile(logger.FilePath));
             return r;
         }
@@ -1851,40 +1862,240 @@ public partial class MainWindow : Window
 
     #endregion
 
+    #region Promotion CI/CD
+
+    private async void PromotionConfig_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!RequireProject()) return;
+        CiPipelineDialogResult? result;
+        using (await _configGate.AcquireAsync("Promotion CI/CD dialog"))
+        {
+            result = await new CiPipelineWindow(_settings.Pipeline)
+                .ShowDialog<CiPipelineDialogResult?>(this);
+            if (result is null)
+            {
+                _toasts.Info("Promotion settings unchanged");
+                return;
+            }
+
+            _settings.Pipeline = result.Config;
+            _settings.Save();
+            _toasts.Success("Promotion settings saved",
+                $"{result.Config.StagingBranch} → {result.Config.MainBranch}");
+        }
+
+        if (result.Action == CiPipelineDialogAction.DryRun)
+            await RunPromotionCi(dryRun: true, triggeredBySchedule: false);
+        else if (result.Action == CiPipelineDialogAction.Promote)
+            await RunPromotionCi(dryRun: false, triggeredBySchedule: false);
+    }
+
+    private async void PromotionDryRun_Click(object? sender, RoutedEventArgs e) =>
+        await RunPromotionCi(dryRun: true, triggeredBySchedule: false);
+
+    private async void PromotionRun_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+        var cfg = _settings.Pipeline;
+        if (!await Dialogs.ConfirmAsync(this, "Promote staging to production?",
+                $"This will run every enabled gate, merge {cfg.StagingBranch} into {cfg.MainBranch}, " +
+                $"{(cfg.PushMain ? "push the result" : "leave the result unpushed")}, and " +
+                $"{(cfg.BackMergeToDev ? $"back-merge to {cfg.DevBranch}." : "skip the back-merge.")}",
+                yes: "Run promotion"))
+            return;
+        await RunPromotionCi(dryRun: false, triggeredBySchedule: false);
+    }
+
+    private async Task RunPromotionCi(bool dryRun, bool triggeredBySchedule)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+
+        using var gate = triggeredBySchedule
+            ? _configGate.TryAcquire("Scheduled promotion CI")
+            : await _configGate.AcquireAsync("Promotion CI run");
+        if (gate is null)
+        {
+            Log($"[schedule] promotion skipped — config is being edited ({_configGate.HeldBy}).");
+            _toasts.Warning("Scheduled promotion skipped", "Promotion settings were being edited.");
+            return;
+        }
+
+        var cfg = _settings.Pipeline;
+        AndroidCommandCenter.Ci.FirestoreSink? sink = cfg.PublishToFirestore
+            ? new AndroidCommandCenter.Ci.FirestoreSink(
+                cfg.FirestoreProjectId, cfg.FirestoreCredentialsJson, cfg.FirestoreCollection)
+            : null;
+        var ci = new AndroidCommandCenter.Ci.LocalCiRunner(
+            _runner, _git, _android, _testReports, sink);
+        ci.LogMessage += L;
+        ci.StageChanged += stage => Dispatcher.UIThread.Post(() =>
+            SetStatus($"CI: {stage.Name}"));
+
+        string originalProject = _android.ProjectPath;
+        string originalVariant = _android.SelectedVariant;
+        string? originalTarget = _android.TargetDevice;
+        EnterBusy(dryRun ? "Validating promotion" : "Running promotion CI");
+        Log($"\n===== Promotion CI{(dryRun ? " [DRY RUN]" : "")} =====");
+        try
+        {
+            var manifest = await ci.RunAsync(cfg, _activeProfile,
+                _profiles.GitHubToken(_activeProfile),
+                triggeredBySchedule ? "schedule" : "gui", dryRun, _cts!.Token);
+            Log($"Manifest: {manifest.ManifestPath}");
+            Log($"===== {manifest.Result} =====");
+
+            if (manifest.Success)
+                _toasts.Success(dryRun ? "Promotion validation passed" : "Promotion CI completed",
+                    manifest.Result, details: manifest.ManifestPath,
+                    actionLabel: "Open runs", action: () => OpenDir(Paths.CiRuns));
+            else
+            {
+                string? details = manifest.Stages.LastOrDefault(s => s.Failure != null)?.Failure?.ToString();
+                _toasts.Error("Promotion CI failed", manifest.Result, details,
+                    actionLabel: "Open runs", action: () => OpenDir(Paths.CiRuns));
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Log("===== Promotion CI cancelled =====");
+            _toasts.Warning("Promotion CI cancelled", "The remote was left unchanged unless promotion had already completed.");
+        }
+        catch (Exception ex)
+        {
+            Log($"[ERROR] {ex}");
+            _toasts.Error("Promotion CI failed", Toaster.Friendly(ex), ex.ToString());
+        }
+        finally
+        {
+            ci.LogMessage -= L;
+            _android.ProjectPath = originalProject;
+            _android.SelectedVariant = originalVariant;
+            _android.TargetDevice = originalTarget;
+            ExitBusy();
+        }
+    }
+
+    private async void RollbackPromotion_Click(object? sender, RoutedEventArgs e)
+    {
+        if (!RequireProject() || !RequireIdle()) return;
+        var run = AndroidCommandCenter.Ci.LocalCiRunner.LoadManifests()
+            .FirstOrDefault(m => m.ProjectPath == _android.ProjectPath && m.Success && m.MergeSha != null);
+        if (run is null)
+        {
+            _toasts.Warning("Nothing to roll back", "No successful promoted CI run was found for this project.");
+            return;
+        }
+
+        var rollback = new AndroidCommandCenter.Ci.RollbackService(_git);
+        rollback.LogMessage += L;
+        AndroidCommandCenter.Ci.RollbackPlan plan;
+        try
+        {
+            plan = await rollback.PlanAsync(_settings.Pipeline, run, _android.ProjectPath,
+                CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            rollback.LogMessage -= L;
+            _toasts.Error("Rollback cannot start", Toaster.Friendly(ex), ex.ToString());
+            return;
+        }
+
+        if (!await Dialogs.ConfirmDestructiveAsync(this, "Roll back the last promotion?",
+                plan.Description + "\n\nThis creates and pushes a new revert commit; it never rewrites history.",
+                "I understand this changes the production branch", "Create and push rollback"))
+        {
+            rollback.LogMessage -= L;
+            return;
+        }
+
+        EnterBusy("Rolling back promotion");
+        try
+        {
+            var result = await rollback.ExecuteAsync(_settings.Pipeline, plan,
+                _android.ProjectPath, _activeProfile, _profiles.GitHubToken(_activeProfile),
+                push: true, reason: "Manual rollback from Android Command Center", _cts!.Token);
+            if (result.Success) _toasts.Success("Rollback completed", result.Message);
+            else _toasts.Error("Rollback failed", result.Message);
+        }
+        catch (OperationCanceledException) { _toasts.Warning("Rollback cancelled"); }
+        catch (Exception ex) { _toasts.Error("Rollback failed", Toaster.Friendly(ex), ex.ToString()); }
+        finally
+        {
+            rollback.LogMessage -= L;
+            ExitBusy();
+        }
+    }
+
+    private void OpenCiRuns_Click(object? sender, RoutedEventArgs e) => OpenDir(Paths.CiRuns);
+
+    private async Task CheckScheduledPromotion()
+    {
+        if (_isRunning || _configGate.IsHeld || !_settings.Pipeline.ScheduleEnabled) return;
+        string? dueKey = GetDueScheduledRunKey(_settings.Pipeline, DateTime.Now);
+        if (dueKey is null) return;
+
+        _settings.Pipeline.LastScheduledRunKey = dueKey;
+        _settings.Save();
+        Log($"\n[schedule] promotion CI due ({dueKey}).");
+        _toasts.Info("Scheduled promotion starting", dueKey);
+        await RunPromotionCi(dryRun: false, triggeredBySchedule: true);
+    }
+
+    private static string? GetDueScheduledRunKey(CiPipelineConfig cfg, DateTime now)
+    {
+        if (!TryParseRecurringTimes(cfg.ScheduleTimes, out var times)) return null;
+        foreach (var time in times)
+        {
+            var at = now.Date.Add(time);
+            var age = now - at;
+            if (age >= TimeSpan.Zero && age < TimeSpan.FromMinutes(5))
+            {
+                string key = $"{at:yyyy-MM-dd}|{time:hh\\:mm}";
+                return cfg.LastScheduledRunKey == key ? null : key;
+            }
+        }
+        return null;
+    }
+
+    #endregion
+
     #region Automation
 
     private async void AutomationConfig_Click(object? s, RoutedEventArgs e)
     {
         if (!RequireProject()) return;
-        using var gate = await _configGate.AcquireAsync("Automation dialog");
-
-        var a = _settings.Automation;
-        var draft = new AutomationDraft(
-            a.RemoteName, a.SourceBranch,
-            _activeProfile.GitHubOwner, _activeProfile.GitHubRepo,
-            _profiles.GitHubToken(_activeProfile),
-            a.RecurringRunsEnabled, a.RecurringRunTimes, a.FailureAction,
-            new EmailDraft(a.Email.SendEmail, a.Email.ToAddress, a.Email.FromAddress,
-                a.Email.SmtpHost, a.Email.SmtpPort, a.Email.EnableSsl, a.Email.UserName, ""));
-
-        bool hasPw = _secrets.Get(EmailNotificationService.PasswordKey).Length > 0;
-        var result = await new AutomationWindow(draft, hasPw)
-            .ShowDialog<AutomationWindow.AutomationDialogResult?>(this);
-        if (result is null) { _toasts.Info("Automation config unchanged"); return; }
-
-        try
+        AutomationWindow.AutomationDialogResult? result;
+        using (await _configGate.AcquireAsync("Automation dialog"))
         {
-            result.Draft.ApplyTo(a, _activeProfile, _secrets);
-            _profiles.SaveProfile(_activeProfile);
-            _settings.Save();
-            UpdateContextBanner();
-            _toasts.Success("Automation config saved",
-                a.RecurringRunsEnabled ? $"Scheduled at {a.RecurringRunTimes}" : "Schedule disabled");
-        }
-        catch (Exception ex)
-        {
-            _toasts.Error("Could not save automation config", Toaster.Friendly(ex), ex.ToString());
-            return;
+            var a = _settings.Automation;
+            var draft = new AutomationDraft(
+                a.RemoteName, a.SourceBranch,
+                _activeProfile.GitHubOwner, _activeProfile.GitHubRepo,
+                _profiles.GitHubToken(_activeProfile),
+                a.RecurringRunsEnabled, a.RecurringRunTimes, a.FailureAction,
+                new EmailDraft(a.Email.SendEmail, a.Email.ToAddress, a.Email.FromAddress,
+                    a.Email.SmtpHost, a.Email.SmtpPort, a.Email.EnableSsl, a.Email.UserName, ""));
+
+            bool hasPw = _secrets.Get(EmailNotificationService.PasswordKey).Length > 0;
+            result = await new AutomationWindow(draft, hasPw)
+                .ShowDialog<AutomationWindow.AutomationDialogResult?>(this);
+            if (result is null) { _toasts.Info("Automation config unchanged"); return; }
+
+            try
+            {
+                result.Draft.ApplyTo(a, _activeProfile, _secrets);
+                _profiles.SaveProfile(_activeProfile);
+                _settings.Save();
+                UpdateContextBanner();
+                _toasts.Success("Automation config saved",
+                    a.RecurringRunsEnabled ? $"Scheduled at {a.RecurringRunTimes}" : "Schedule disabled");
+            }
+            catch (Exception ex)
+            {
+                _toasts.Error("Could not save automation config", Toaster.Friendly(ex), ex.ToString());
+                return;
+            }
         }
 
         if (result.RunNow) await RunAutomatedDeployment(false);
@@ -1978,7 +2189,7 @@ public partial class MainWindow : Window
 
     private async Task CheckScheduledAutomation()
     {
-        if (_isRunning || !_settings.Automation.RecurringRunsEnabled) return;
+        if (_isRunning || _configGate.IsHeld || !_settings.Automation.RecurringRunsEnabled) return;
         string? dueKey = GetDueScheduledRunKey(_settings.Automation, DateTime.Now);
         if (dueKey == null) return;
 

@@ -9,6 +9,9 @@ internal static class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        if (args.Length > 0 && args[0] is "ci" or "rollback")
+            return Cli.CliEntry.RunAsync(args).GetAwaiter().GetResult();
+
         try
         {
             return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);

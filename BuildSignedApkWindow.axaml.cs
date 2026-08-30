@@ -15,6 +15,9 @@ public partial class BuildSignedApkWindow : Window
     private readonly FieldValidator _v;
     private readonly bool _ready;
 
+    public BuildSignedApkWindow() : this(
+        new SigningDraft("", "", "", "", ImmutableArray<string>.Empty), [], null) { }
+
     public BuildSignedApkWindow(SigningDraft draft, IEnumerable<string> availableVariants, string? activeVariant)
     {
         InitializeComponent();
@@ -33,7 +36,7 @@ public partial class BuildSignedApkWindow : Window
         {
             Name = v,
             IsSelected = selected.Contains(v),
-            Changed = () => { if (_ready) _v.Run(); }
+            Changed = ValidateChoices
         }).ToList();
         VariantList.ItemsSource = _choices;
 
@@ -48,6 +51,8 @@ public partial class BuildSignedApkWindow : Window
         _ready = true;
         _v.Run();
     }
+
+    private void ValidateChoices() { if (_ready) _v.Run(); }
 
     private void Field_Changed(object? s, TextChangedEventArgs e) { if (_ready) _v.Run(); }
 

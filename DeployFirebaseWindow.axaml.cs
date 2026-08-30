@@ -12,6 +12,8 @@ public partial class DeployFirebaseWindow : Window
     private readonly FieldValidator _v;
     private readonly bool _ready;
 
+    public DeployFirebaseWindow() : this(new DeployDraft("", "", "", "")) { }
+
     public DeployFirebaseWindow(DeployDraft draft)
     {
         InitializeComponent();

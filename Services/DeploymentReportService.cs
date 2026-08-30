@@ -12,8 +12,6 @@ public class DeploymentReportService
     private static readonly string File_ = Path.Combine(Dir, "deployment_history.json");
 
     private List<DeploymentRecord> _records = [];
-    public event Action<string>? LogMessage;
-
     public DeploymentReportService() { Directory.CreateDirectory(Dir); Load(); }
 
     private void Load()
