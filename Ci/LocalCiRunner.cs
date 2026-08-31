@@ -54,7 +54,8 @@ public sealed class LocalCiRunner
             Repository = $"{profile.GitHubOwner}/{profile.GitHubRepo}",
             Remote = config.Remote, DevBranch = config.DevBranch,
             StagingBranch = config.StagingBranch, MainBranch = config.MainBranch,
-            GateVariant = config.GateVariant, DryRun = dryRun, LogPath = logger.FilePath
+            GateVariant = config.GateVariant, TestVariant = config.TestVariant,
+            DryRun = dryRun, LogPath = logger.FilePath
         };
         manifest.ManifestPath = Path.Combine(Paths.CiRuns, $"{manifest.RunId}.json");
 

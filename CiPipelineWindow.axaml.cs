@@ -27,6 +27,7 @@ public partial class CiPipelineWindow : Window
         StagingBox.Text = config.StagingBranch;
         MainBox.Text = config.MainBranch;
         VariantBox.Text = config.GateVariant;
+        TestVariantBox.Text = config.TestVariant;
 
         LintCheck.IsChecked = config.RunLint;
         LintWarningsCheck.IsChecked = config.LintFailsOnWarning;
@@ -74,6 +75,7 @@ public partial class CiPipelineWindow : Window
         string staging = StagingBox.Text?.Trim() ?? "";
         string main = MainBox.Text?.Trim() ?? "";
         string variant = VariantBox.Text?.Trim() ?? "";
+        string testVariant = TestVariantBox.Text?.Trim() ?? "";
         string prefix = TagPrefixBox.Text?.Trim() ?? "";
         var problems = new List<string>();
 
@@ -84,6 +86,7 @@ public partial class CiPipelineWindow : Window
         if (new[] { dev, staging, main }.Distinct(StringComparer.OrdinalIgnoreCase).Count() != 3)
             problems.Add("Development, staging, and production must be three different branches.");
         if (variant.Length == 0) problems.Add("Gate variant is required.");
+        if (testVariant.Length == 0) problems.Add("Test variant is required.");
         if (TagCheck.IsChecked == true && prefix.Length == 0)
             problems.Add("A tag prefix is required when release tagging is enabled.");
         if (PromoteCheck.IsChecked != true &&
@@ -113,7 +116,7 @@ public partial class CiPipelineWindow : Window
         return new CiPipelineConfig
         {
             Remote = remote, DevBranch = dev, StagingBranch = staging,
-            MainBranch = main, GateVariant = variant,
+            MainBranch = main, GateVariant = variant, TestVariant = testVariant,
             RunLint = LintCheck.IsChecked == true,
             LintFailsOnWarning = LintWarningsCheck.IsChecked == true,
             RunUnitTests = UnitCheck.IsChecked == true,

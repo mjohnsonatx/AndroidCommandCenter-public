@@ -102,6 +102,25 @@ public sealed class AndroidService
         return list;
     }
 
+    /// <summary>
+    /// Gradle normally discovers the Android SDK from local.properties. CI
+    /// worktrees do not contain that git-ignored file, so export the SDK that
+    /// the command center already resolved for every Gradle process instead.
+    /// </summary>
+    private Dictionary<string, string> GradleEnvironment(
+        IReadOnlyDictionary<string, string>? additions)
+    {
+        if (!Directory.Exists(SdkPath))
+            throw new InvalidOperationException(
+                $"Android SDK not found at '{SdkPath}'. Set ANDROID_HOME or install the SDK " +
+                "before running Gradle.");
+
+        var environment = _javaEnvironment.BuildEnvironment(additions);
+        environment["ANDROID_HOME"] = SdkPath;
+        environment["ANDROID_SDK_ROOT"] = SdkPath;
+        return environment;
+    }
+
     private Task<int> RunGradle(
         IReadOnlyList<string> args, CancellationToken ct,
         IReadOnlyDictionary<string, string>? additionalEnvironment = null,
@@ -115,7 +134,7 @@ public sealed class AndroidService
             !effectiveArgs.Any(a => a.StartsWith("-Dorg.gradle.java.installations.paths=", StringComparison.Ordinal)))
             effectiveArgs.Add($"-Dorg.gradle.java.installations.paths={_javaEnvironment.ToolchainPaths}");
         return _runner.RunAsync(Gradlew(), effectiveArgs, ProjectPath, ct,
-            _javaEnvironment.BuildEnvironment(additionalEnvironment), echoCommand);
+            GradleEnvironment(additionalEnvironment), echoCommand);
     }
 
     // ── Build ──────────────────────────────────────────────────────────
@@ -184,7 +203,17 @@ public sealed class AndroidService
     // project's normal per-build-type keys so a test install never changes the
     // certificate on the attached device.
     public Task<int> RunUnitTests(CancellationToken ct) =>
-        RunGradle(GradleArgs($"test{SelectedVariant}UnitTest"), ct);
+        RunUnitTests(ct, forceRerun: false);
+
+    public Task<int> RunUnitTests(CancellationToken ct, bool forceRerun)
+    {
+        var args = GradleArgs($"test{SelectedVariant}UnitTest");
+        // CI worktrees keep warm build caches between runs. Force only CI test
+        // executions so the report parser receives fresh JUnit XML instead of
+        // accidentally accepting (or rejecting) an old UP-TO-DATE result.
+        if (forceRerun) args.Add("--rerun-tasks");
+        return RunGradle(args, ct);
+    }
 
     public Task<int> RunInstrumentTests(CancellationToken ct)
     {

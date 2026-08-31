@@ -136,7 +136,41 @@ public sealed class SyncStage : ICiStage
                 $"{ctx.Main} has {behind} commit(s) that are not in {ctx.Staging}. " +
                 $"Back-merge {ctx.Main} into {ctx.Dev} and {ctx.Staging} first, or the promotion would discard them.");
 
-        rec.Summary = $"{m.Commits.Count} commit(s) to promote. staging={m.StagingSha[..8]} main={m.MainShaBefore[..8]}";
+        string configuredVariant = ctx.Config.GateVariant;
+        string configuredTestVariant = string.IsNullOrWhiteSpace(ctx.Config.TestVariant)
+            ? "Debug" : ctx.Config.TestVariant;
+        VariantResolution variant;
+        VariantResolution testVariant;
+        try
+        {
+            var detector = new FlavorDetector();
+            variant = detector.ResolveGateVariant(
+                ctx.ProjectPath, configuredVariant, ctx.Staging);
+            testVariant = detector.ResolveGateVariant(
+                ctx.ProjectPath, configuredTestVariant, ctx.Staging);
+        }
+        catch (Exception ex)
+        {
+            throw new StageFailedException(ex.Message, ex);
+        }
+        ctx.Config.GateVariant = variant.Resolved;
+        ctx.Config.TestVariant = testVariant.Resolved;
+        ctx.Manifest.GateVariant = variant.Resolved;
+        ctx.Manifest.TestVariant = testVariant.Resolved;
+        ctx.Android.SelectedVariant = variant.Resolved;
+        rec.Data["configuredGateVariant"] = configuredVariant;
+        rec.Data["resolvedGateVariant"] = variant.Resolved;
+        rec.Data["configuredTestVariant"] = configuredTestVariant;
+        rec.Data["resolvedTestVariant"] = testVariant.Resolved;
+        rec.Data["availableVariants"] = variant.Available;
+        if (!configuredVariant.Equals(variant.Resolved, StringComparison.Ordinal))
+            ctx.Info($"  [build variant] {configuredVariant} → {variant.Resolved} — {variant.Reason}");
+        if (!configuredTestVariant.Equals(testVariant.Resolved, StringComparison.Ordinal))
+            ctx.Info($"  [test variant] {configuredTestVariant} → {testVariant.Resolved} — {testVariant.Reason}");
+
+        rec.Summary = $"{m.Commits.Count} commit(s) to promote; " +
+                      $"build={variant.Resolved}, tests={testVariant.Resolved}. " +
+                      $"staging={m.StagingSha[..8]} main={m.MainShaBefore[..8]}";
         rec.Data["commitCount"] = m.Commits.Count;
         foreach (var c in m.Commits.Take(20)) ctx.Info($"  {c.Sha[..8]}  {c.Author,-18} {c.Subject}");
         if (m.Commits.Count > 20) ctx.Info($"  …and {m.Commits.Count - 20} more");
@@ -427,9 +461,9 @@ public sealed class UnitTestStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        ctx.Android.SelectedVariant = ctx.Config.GateVariant;
+        ctx.Android.SelectedVariant = ctx.Config.TestVariant;
         var at = DateTime.Now;
-        int code = await ctx.Android.RunUnitTests(ct);
+        int code = await ctx.Android.RunUnitTests(ct, forceRerun: true);
         var rpt = ctx.TestReports.ParseResults(ctx.ProjectPath, "UnitTests", at);
 
         rec.ExitCode = code;
@@ -455,7 +489,7 @@ public sealed class InstrumentTestStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        ctx.Android.SelectedVariant = ctx.Config.GateVariant;
+        ctx.Android.SelectedVariant = ctx.Config.TestVariant;
         var avd = new AvdManager(ctx.Runner, ctx.Android.AdbPath, ctx.Android.EmulatorPath);
         avd.LogMessage += ctx.Info;
         var devices = await avd.GetDevicesSilent(ct);

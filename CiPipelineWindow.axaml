@@ -25,7 +25,9 @@
           </StackPanel>
           <StackPanel Grid.Column="2">
             <TextBlock Classes="label" Text="Gate variant:"/>
-            <TextBox x:Name="VariantBox" Watermark="Release"/>
+            <TextBox x:Name="VariantBox" Watermark="Release (auto → StagingRelease)"/>
+            <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Text="A bare build type is matched to the staging flavor after checkout; for example, Release becomes StagingRelease."/>
           </StackPanel>
           <StackPanel Grid.Row="1" Margin="0,8,0,0">
             <TextBlock Classes="label" Text="Development branch:"/>
@@ -36,8 +38,18 @@
             <TextBox x:Name="StagingBox"/>
           </StackPanel>
         </Grid>
-        <TextBlock Classes="label" Text="Production branch:" Margin="0,8,0,0"/>
-        <TextBox x:Name="MainBox"/>
+        <Grid ColumnDefinitions="*,12,*" Margin="0,8,0,0">
+          <StackPanel>
+            <TextBlock Classes="label" Text="Production branch:"/>
+            <TextBox x:Name="MainBox"/>
+          </StackPanel>
+          <StackPanel Grid.Column="2">
+            <TextBlock Classes="label" Text="Test variant:"/>
+            <TextBox x:Name="TestVariantBox" Watermark="Debug (auto → StagingDebug)"/>
+            <TextBlock Classes="hint" Margin="0,4,0,0" TextWrapping="Wrap"
+                       Text="Used for unit and emulator tests when release variants do not expose test tasks."/>
+          </StackPanel>
+        </Grid>
         <TextBlock Classes="hint" Margin="0,5,0,0" TextWrapping="Wrap"
                    Text="Every run fetches staging, evaluates all enabled gates in an isolated worktree, creates a no-fast-forward merge on production, then back-merges that exact release into development."/>
 

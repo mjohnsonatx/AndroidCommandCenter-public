@@ -12,8 +12,14 @@ public sealed class CiPipelineConfig
     public string StagingBranch { get; set; } = "staging";
     public string MainBranch { get; set; } = "master";
 
-    /// <summary>Variant used for lint/test/build gates (usually a release variant).</summary>
+    /// <summary>Variant used for lint and build gates (usually a release variant).</summary>
     public string GateVariant { get; set; } = "Release";
+
+    /// <summary>
+    /// Variant used for unit and instrument tests. Android projects commonly
+    /// expose tests only for debug build types even when release is the build gate.
+    /// </summary>
+    public string TestVariant { get; set; } = "Debug";
 
     // Gates
     public bool RunLint { get; set; } = true;

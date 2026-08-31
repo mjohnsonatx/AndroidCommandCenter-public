@@ -67,6 +67,7 @@ public sealed class CiRunManifest
     public string StagingBranch { get; set; } = "";
     public string MainBranch { get; set; } = "";
     public string GateVariant { get; set; } = "";
+    public string TestVariant { get; set; } = "";
 
     public DateTime StartedAt { get; set; } = DateTime.UtcNow;
     public DateTime? FinishedAt { get; set; }

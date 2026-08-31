@@ -3,6 +3,9 @@ using System.Text.RegularExpressions;
 
 namespace AndroidCommandCenter.Services;
 
+public sealed record VariantResolution(
+    string Configured, string Resolved, IReadOnlyList<string> Available, string Reason);
+
 public class FlavorDetector
 {
     public event Action<string>? LogMessage;
@@ -46,6 +49,49 @@ public class FlavorDetector
         return variants;
     }
 
+    /// <summary>
+    /// Resolves a CI gate variant after the staging branch has been checked
+    /// out. A bare build type such as Release is qualified with the matching
+    /// branch flavor (staging + Release => StagingRelease) when flavors exist.
+    /// </summary>
+    public VariantResolution ResolveGateVariant(
+        string projectPath, string configuredVariant, string stagingBranch)
+    {
+        string configured = configuredVariant.Trim();
+        var available = DetectVariants(projectPath);
+        if (available.Count == 0)
+            throw new InvalidOperationException("No Android application variants were detected.");
+
+        string? exact = available.FirstOrDefault(v =>
+            v.Equals(configured, StringComparison.OrdinalIgnoreCase));
+        if (exact is not null)
+            return new(configured, exact, available, "Configured variant exists.");
+
+        var buildTypeMatches = available
+            .Where(v => v.EndsWith(configured, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        string branchPart = stagingBranch
+            .Split(['/', '\\'], StringSplitOptions.RemoveEmptyEntries)
+            .LastOrDefault() ?? stagingBranch;
+        branchPart = new string(branchPart.Where(char.IsLetterOrDigit).ToArray());
+
+        var branchMatches = buildTypeMatches
+            .Where(v => v.StartsWith(branchPart, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        if (branchMatches.Count == 1)
+            return new(configured, branchMatches[0], available,
+                $"Matched the '{stagingBranch}' branch flavor.");
+
+        if (buildTypeMatches.Count == 1)
+            return new(configured, buildTypeMatches[0], available,
+                "Only one variant uses the configured build type.");
+
+        string choices = string.Join(", ", available);
+        throw new InvalidOperationException(
+            $"Gate variant '{configured}' is not an exact project variant and could not be " +
+            $"resolved for branch '{stagingBranch}'. Available variants: {choices}.");
+    }
+
     // ── Build file discovery ────────────────────
     private string? FindBuildFile(string projectPath)
     {
@@ -80,44 +126,65 @@ public class FlavorDetector
     {
         var block = ExtractBlock(content, "productFlavors");
         if (block == null) return [];
-
-        var results = new List<string>();
-
-        // Kotlin DSL: create("name")
-        foreach (Match m in Regex.Matches(block, @"create\s*\(\s*""(\w+)"""))
-            results.Add(m.Groups[1].Value);
-
-        if (results.Count > 0) return results.Distinct().ToList();
-
-        // Groovy DSL: flavorName { ... }
-        foreach (Match m in Regex.Matches(block, @"^\s+(\w+)\s*\{", RegexOptions.Multiline))
-        {
-            var n = m.Groups[1].Value;
-            if (!IsGradleKeyword(n)) results.Add(n);
-        }
-        return results.Distinct().ToList();
+        return ParseDirectNamedBlocks(block);
     }
 
     private List<string> ParseBuildTypes(string content)
     {
-        var results = new List<string>();
         var block = ExtractBlock(content, "buildTypes");
-
-        if (block != null)
-        {
-            foreach (Match m in Regex.Matches(block, @"(?:getByName|create)\s*\(\s*""(\w+)"""))
-                results.Add(m.Groups[1].Value);
-
-            foreach (Match m in Regex.Matches(block, @"^\s+(\w+)\s*\{", RegexOptions.Multiline))
-            {
-                var n = m.Groups[1].Value;
-                if (!IsGradleKeyword(n) && !results.Contains(n)) results.Add(n);
-            }
-        }
+        var results = block is null ? [] : ParseDirectNamedBlocks(block);
 
         if (!results.Contains("debug")) results.Insert(0, "debug");
         if (!results.Contains("release")) results.Add("release");
         return results.Distinct().ToList();
+    }
+
+    /// <summary>
+    /// Finds only immediate child blocks. The earlier regex also mistook
+    /// nested blocks such as ndk and firebaseCrashlytics for build types.
+    /// </summary>
+    private static List<string> ParseDirectNamedBlocks(string block)
+    {
+        var results = new List<string>();
+        int depth = 0;
+        foreach (string line in block.Split('\n'))
+        {
+            if (depth == 0)
+            {
+                var factory = Regex.Match(line,
+                    @"^\s*(?:getByName|create)\s*\(\s*[""'](?<name>\w+)[""']\s*\)\s*\{");
+                var named = Regex.Match(line, @"^\s*(?<name>\w+)\s*\{");
+                string name = factory.Success ? factory.Groups["name"].Value
+                    : named.Success ? named.Groups["name"].Value : "";
+                if (name.Length > 0 && !IsGradleKeyword(name) && !results.Contains(name))
+                    results.Add(name);
+            }
+            depth += BraceDelta(line);
+        }
+        return results;
+    }
+
+    private static int BraceDelta(string line)
+    {
+        int delta = 0;
+        char quote = '\0';
+        bool escaped = false;
+        for (int i = 0; i < line.Length; i++)
+        {
+            char c = line[i];
+            if (quote != '\0')
+            {
+                if (escaped) { escaped = false; continue; }
+                if (c == '\\') { escaped = true; continue; }
+                if (c == quote) quote = '\0';
+                continue;
+            }
+            if (c is '\'' or '"') { quote = c; continue; }
+            if (c == '/' && i + 1 < line.Length && line[i + 1] == '/') break;
+            if (c == '{') delta++;
+            else if (c == '}') delta--;
+        }
+        return delta;
     }
 
     // ── Helpers ─────────────────────────────────

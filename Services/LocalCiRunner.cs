@@ -250,8 +250,9 @@ public sealed class LocalCiRunner
             {
                 await Stage(m, log, "Unit tests", async st =>
                 {
+                    android.SelectedVariant = cfg.TestVariant;
                     var at = DateTime.Now;
-                    int code = await android.RunUnitTests(ct);
+                    int code = await android.RunUnitTests(ct, forceRerun: true);
                     var rpt = _testReports.ParseResults(wt, "UnitTests", at);
 
                     st.ExitCode = code;
@@ -287,6 +288,7 @@ public sealed class LocalCiRunner
             {
                 await Stage(m, log, "Instrument tests", async st =>
                 {
+                    android.SelectedVariant = cfg.TestVariant;
                     // Unattended CI must not commandeer a physical phone and wipe
                     // its data. Require an emulator; bail if none is available.
                     var avd = new AvdManager(_runner, android.AdbPath, android.EmulatorPath);
