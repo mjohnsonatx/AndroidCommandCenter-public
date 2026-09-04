@@ -1,4 +1,5 @@
-﻿using System.Collections.Immutable;
+﻿using System.Collections.Concurrent;
+using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
@@ -54,6 +55,8 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _deviceTimer;
     private readonly DispatcherTimer _automationTimer;
+    private readonly DispatcherTimer _logFlushTimer;
+    private readonly ConcurrentQueue<string> _pendingLogLines = new();
 
     private CancellationTokenSource? _cts;
     private bool _isRunning;
@@ -76,6 +79,16 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
+        // Tool output can arrive far faster than the UI can render it. Flush it
+        // in bounded, low-priority batches so input, resize, and window-manager
+        // events stay responsive during long Gradle and Git operations.
+        _logFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
+        {
+            Interval = TimeSpan.FromMilliseconds(100)
+        };
+        _logFlushTimer.Tick += (_, _) => FlushPendingLogs();
+        _logFlushTimer.Start();
+
         _settings = AppSettings.Load(m => Log(m));
         _profiles = new ProjectProfileService(_secrets);
         _android = new AndroidService(_runner);
@@ -85,7 +98,7 @@ public partial class MainWindow : Window
         _firebase = new FirebaseService(_runner);
         _emailNotifications = new EmailNotificationService(_secrets);
 
-        _toasts.LogSink = m => Dispatcher.UIThread.Post(() => AppendLog(m));
+        _toasts.LogSink = L;
         Toasts.Toaster = _toasts;
 
         // Every service funnels its log through here.
@@ -207,12 +220,14 @@ public partial class MainWindow : Window
         await RefreshDeviceList();
     }
 
-    private void L(string msg) => Dispatcher.UIThread.Post(() => AppendLog(msg));
+    private void L(string msg) => QueueLog(msg);
 
     protected override void OnClosed(EventArgs e)
     {
         _deviceTimer.Stop();
         _automationTimer.Stop();
+        _logFlushTimer.Stop();
+        FlushPendingLogs();
         _cts?.Cancel();
         _dashboard.Dispose();
         base.OnClosed(e);
@@ -223,19 +238,44 @@ public partial class MainWindow : Window
     #region Logging and status
 
     private const int MaxLogChars = 400_000;
+    private const int MaxLogFlushChars = 64_000;
 
-    private void AppendLog(string msg)
+    private void QueueLog(string msg)
     {
-        // Unbounded TextBox growth makes the window unusable after a long build.
-        if (LogBox.Text is { Length: > MaxLogChars } existing)
-            LogBox.Text = "…(trimmed)…\n" + existing[(existing.Length - MaxLogChars / 2)..];
-
-        LogBox.Text += msg + Environment.NewLine;
-        LogBox.CaretIndex = LogBox.Text?.Length ?? 0;
+        // File logging is deliberately done before UI batching. A window close
+        // or a busy dispatcher can delay rendering, but must never lose the
+        // durable pipeline log.
         _pipelineLogger?.Line(msg);
+        _pendingLogLines.Enqueue(msg);
     }
 
-    private void Log(string msg) => AppendLog(msg);
+    private void FlushPendingLogs()
+    {
+        if (!Dispatcher.UIThread.CheckAccess())
+        {
+            Dispatcher.UIThread.Post(FlushPendingLogs, DispatcherPriority.Background);
+            return;
+        }
+
+        var batch = new StringBuilder();
+        while (batch.Length < MaxLogFlushChars && _pendingLogLines.TryDequeue(out var line))
+            batch.AppendLine(line);
+
+        if (batch.Length == 0) return;
+
+        string combined = (LogBox.Text ?? string.Empty) + batch;
+        if (combined.Length > MaxLogChars)
+        {
+            const string marker = "…(trimmed)…\n";
+            int keep = MaxLogChars - marker.Length;
+            combined = marker + combined[^keep..];
+        }
+
+        LogBox.Text = combined;
+        LogBox.CaretIndex = combined.Length;
+    }
+
+    private void Log(string msg) => QueueLog(msg);
 
     private void SetStatus(string text)
     {
@@ -468,6 +508,7 @@ public partial class MainWindow : Window
 
     private void ClearLog_Click(object? s, RoutedEventArgs e)
     {
+        _pendingLogLines.Clear();
         LogBox.Text = "";
         _toasts.Clear();
     }
@@ -2124,9 +2165,12 @@ public partial class MainWindow : Window
         Log($"\n===== Promotion CI{(dryRun ? " [DRY RUN]" : "")} =====");
         try
         {
-            var manifest = await ci.RunAsync(cfg, _activeProfile,
-                _profiles.GitHubToken(_activeProfile),
-                triggeredBySchedule ? "schedule" : "gui", dryRun, _cts!.Token);
+            var operationToken = _cts!.Token;
+            string gitHubToken = _profiles.GitHubToken(_activeProfile);
+            var manifest = await Task.Run(
+                () => ci.RunAsync(cfg, _activeProfile, gitHubToken,
+                    triggeredBySchedule ? "schedule" : "gui", dryRun, operationToken),
+                CancellationToken.None);
             Log($"Manifest: {manifest.ManifestPath}");
             Log($"===== {manifest.Result} =====");
 

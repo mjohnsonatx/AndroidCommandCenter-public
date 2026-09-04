@@ -6,6 +6,7 @@ namespace AndroidCommandCenter.Services;
 public class PipelineLogger
 {
     private readonly StringBuilder _sb = new();
+    private readonly object _gate = new();
     public string FilePath { get; }
 
     public static string LogsDirectory
@@ -33,18 +34,29 @@ public class PipelineLogger
 
     public void Section(string title)
     {
-        _sb.AppendLine();
-        _sb.AppendLine("########################################");
-        _sb.AppendLine($"#  STAGE: {title}");
-        _sb.AppendLine("########################################");
+        lock (_gate)
+        {
+            _sb.AppendLine();
+            _sb.AppendLine("########################################");
+            _sb.AppendLine($"#  STAGE: {title}");
+            _sb.AppendLine("########################################");
+        }
     }
 
-    public void Line(string text) => _sb.AppendLine(text);
+    public void Line(string text)
+    {
+        lock (_gate) _sb.AppendLine(text);
+    }
 
     public void Save()
     {
-        _sb.AppendLine();
-        _sb.AppendLine($"Finished: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
-        try { File.WriteAllText(FilePath, _sb.ToString()); } catch { }
+        string contents;
+        lock (_gate)
+        {
+            _sb.AppendLine();
+            _sb.AppendLine($"Finished: {DateTime.Now:yyyy-MM-dd HH:mm:ss}");
+            contents = _sb.ToString();
+        }
+        try { File.WriteAllText(FilePath, contents); } catch { }
     }
 }
