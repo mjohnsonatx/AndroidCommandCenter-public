@@ -120,18 +120,19 @@
                             ToolTip.Tip="Builds the selected variant from the LOCAL project path"/>
                     <Button Classes="nav" Content="Build All" Click="BuildAll_Click"/>
                     <Button Classes="nav" Content="Lint" Click="Lint_Click"
-                            ToolTip.Tip="Android Lint for the selected variant"/>
+                            ToolTip.Tip="Android Lint for productionRelease"/>
                     <Button Classes="nav" Content="List Tasks" Click="ListTasks_Click"/>
                   </StackPanel>
                 </Expander>
 
                 <Expander Classes="nav" Header="Tests">
                   <StackPanel>
-                    <Button Classes="nav" Content="Unit Tests" Click="UnitTests_Click"/>
+                    <Button Classes="nav" Content="Unit Tests" Click="UnitTests_Click"
+                            ToolTip.Tip="Runs productionRelease unit tests"/>
                     <Button Classes="nav" Content="Instrument Tests" Click="InstrumentTests_Click"
-                            ToolTip.Tip="Wipes app data on the target device when it finishes"/>
+                            ToolTip.Tip="Runs productionRelease tests and wipes app data on the target device when finished"/>
                     <Button Classes="nav accent" Content="▶ Full Test Run" Click="FullTestRun_Click"
-                            ToolTip.Tip="Clean → Unit → Instrument on the LOCAL project"/>
+                            ToolTip.Tip="Clean → productionRelease unit → productionRelease instrument on the LOCAL project"/>
                   </StackPanel>
                 </Expander>
 

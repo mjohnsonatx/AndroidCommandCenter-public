@@ -58,11 +58,13 @@ public static class LintReportService
             candidates.AddRange(Directory.GetFiles(reports, "lint-results*.xml", SearchOption.TopDirectoryOnly));
         }
 
-        // Prefer the variant-specific file.
+        // Never accept a report from another variant. A stale Debug or Staging
+        // report must not make a failed productionRelease lint invocation look
+        // successful.
         string? xml = candidates
-            .OrderByDescending(f => Path.GetFileName(f)
+            .Where(f => Path.GetFileName(f)
                 .Contains($"-{variant}.", StringComparison.OrdinalIgnoreCase))
-            .ThenByDescending(File.GetLastWriteTime)
+            .OrderByDescending(File.GetLastWriteTime)
             .FirstOrDefault();
 
         if (xml == null) return report;

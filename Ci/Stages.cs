@@ -429,8 +429,9 @@ public sealed class LintStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        int code = await ctx.Android.RunLint(ctx.Config.GateVariant, ct);
-        var report = LintReportService.Parse(ctx.ProjectPath, ctx.Config.GateVariant);
+        int code = await ctx.Android.RunLint(ct);
+        var report = LintReportService.Parse(
+            ctx.ProjectPath, AndroidService.VerificationVariant);
 
         rec.ExitCode = code;
         rec.Data["errors"] = report.Errors;
@@ -442,7 +443,7 @@ public sealed class LintStage : ICiStage
             .Take(25).Select(i => $"{i.Id}: {i.Message} @ {i.Location}").ToList();
 
         if (report.XmlPath is null)
-            throw new StageFailedException($"Lint exited {code} and produced no report. Is the lint task configured for '{ctx.Config.GateVariant}'?");
+            throw new StageFailedException($"Lint exited {code} and produced no report. Is the lint task configured for '{AndroidService.VerificationVariant}'?");
 
         ctx.Info("  " + report.Summary);
         if (report.Errors > 0)
@@ -467,7 +468,6 @@ public sealed class UnitTestStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        ctx.Android.SelectedVariant = ctx.Config.TestVariant;
         var at = DateTime.Now;
         int code = await ctx.Android.RunUnitTests(ct, forceRerun: true);
         var rpt = ctx.TestReports.ParseResults(ctx.ProjectPath, "UnitTests", at);
@@ -495,7 +495,6 @@ public sealed class InstrumentTestStage : ICiStage
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
-        ctx.Android.SelectedVariant = ctx.Config.TestVariant;
         var avd = new AvdManager(ctx.Runner, ctx.Android.AdbPath, ctx.Android.EmulatorPath);
         avd.LogMessage += ctx.Info;
         var devices = await avd.GetDevicesSilent(ct);

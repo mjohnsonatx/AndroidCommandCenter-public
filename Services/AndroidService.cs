@@ -5,6 +5,8 @@ namespace AndroidCommandCenter.Services;
 
 public sealed class AndroidService
 {
+    public const string VerificationVariant = CiPipelineConfig.ProductionReleaseVariant;
+
     private readonly ProcessRunner _runner;
     private string _projectPath = "";
     private ProjectJavaEnvironment _javaEnvironment = JavaToolchainResolver.Resolve(null);
@@ -152,15 +154,12 @@ public sealed class AndroidService
 
     // ── Lint (Android standard lint) ───────────────────────────────────
     /// <summary>
-    /// Runs Android Lint for a variant. Uses lintRelease/lintDebug style task
-    /// when a variant is given. -Dlint.baselines.continue lets a configured
-    /// baseline file be created rather than failing the first run.
+    /// Runs Android Lint only for the productionRelease distribution variant.
+    /// Keeping the task name here prevents standalone, automated, and CI callers
+    /// from accidentally linting a debug or staging component.
     /// </summary>
-    public Task<int> RunLint(string variant, CancellationToken ct)
-    {
-        string task = string.IsNullOrWhiteSpace(variant) ? "lint" : $"lint{variant}";
-        return RunGradle(GradleArgs(task), ct);
-    }
+    public Task<int> RunLint(CancellationToken ct) =>
+        RunGradle(GradleArgs($"lint{VerificationVariant}"), ct);
 
     // ── Signed APK build ───────────────────────────────────────────────
     // Firebase/Play deploy builds ONLY. The android.injected.signing.*
@@ -207,7 +206,7 @@ public sealed class AndroidService
 
     public Task<int> RunUnitTests(CancellationToken ct, bool forceRerun)
     {
-        var args = GradleArgs($"test{SelectedVariant}UnitTest");
+        var args = GradleArgs($"test{VerificationVariant}UnitTest");
         // CI worktrees keep warm build caches between runs. Force only CI test
         // executions so the report parser receives fresh JUnit XML instead of
         // accidentally accepting (or rejecting) an old UP-TO-DATE result.
@@ -217,7 +216,7 @@ public sealed class AndroidService
 
     public Task<int> RunInstrumentTests(CancellationToken ct)
     {
-        var args = GradleArgs($"connected{SelectedVariant}AndroidTest");
+        var args = GradleArgs($"connected{VerificationVariant}AndroidTest");
         Dictionary<string, string>? env = null;
         if (TargetDevice != null)
         {

@@ -838,11 +838,11 @@ public partial class MainWindow : Window
     private async void Lint_Click(object? s, RoutedEventArgs e)
     {
         if (!RequireProject() || !RequireIdle()) return;
-        string variant = _android.SelectedVariant;
+        const string variant = AndroidService.VerificationVariant;
         EnterBusy($"Lint {variant}");
         try
         {
-            int code = await _android.RunLint(variant, _cts!.Token);
+            int code = await _android.RunLint(_cts!.Token);
             var report = LintReportService.Parse(_android.ProjectPath, variant);
             Log($"===== Lint exit {code} =====");
             Log(report.Summary);
@@ -897,7 +897,7 @@ public partial class MainWindow : Window
                 if (target == null) return;   // toast already raised
             }
 
-            Log($"\n===== {testType} ({_android.SelectedVariant}) =====");
+            Log($"\n===== {testType} ({AndroidService.VerificationVariant}) =====");
             started = true;
             var startedAt = DateTime.Now;
             int code = await testOp(_cts!.Token);
@@ -907,7 +907,7 @@ public partial class MainWindow : Window
             ShowSummary(rpt);
             ReportTestResults(testType, rpt);
             string path = _testReports.SaveReport(
-                rpt, _android.ProjectPath, _android.SelectedVariant, buf.ToString());
+                rpt, _android.ProjectPath, AndroidService.VerificationVariant, buf.ToString());
 
             if (rpt.Total == 0)
             {
@@ -1104,7 +1104,7 @@ public partial class MainWindow : Window
                 yes: "Run", danger: true))
             return;
 
-        string v = _android.SelectedVariant;
+        const string v = AndroidService.VerificationVariant;
         var steps = new List<WorkflowStep>
         {
             new() { Name = "Stop Daemons", Action = _android.StopDaemons, StopOnFailure = false },
@@ -1869,7 +1869,8 @@ public partial class MainWindow : Window
                 ShowSummary(unitRpt);
                 PhaseComplete("Unit tests",
                     unitRpt.Total > 0 ? $"{unitRpt.Passed} of {unitRpt.Total} passed" : "no test results");
-                _testReports.SaveReport(unitRpt, req.ProjectPath, req.ActiveVariant, "(FP)");
+                _testReports.SaveReport(unitRpt, req.ProjectPath,
+                    AndroidService.VerificationVariant, "(FP)");
                 if ((unitRpt.Failed > 0 || c != 0) &&
                     !await HandleTestFailure("Unit Tests", unitRpt, req.FailureAction, logger))
                     return Fin(false, "Stopped after unit test failure");
@@ -1893,7 +1894,8 @@ public partial class MainWindow : Window
                 ShowSummary(instrRpt);
                 PhaseComplete("Instrument tests",
                     instrRpt.Total > 0 ? $"{instrRpt.Passed} of {instrRpt.Total} passed" : "no test results");
-                _testReports.SaveReport(instrRpt, req.ProjectPath, req.ActiveVariant, "(FP)");
+                _testReports.SaveReport(instrRpt, req.ProjectPath,
+                    AndroidService.VerificationVariant, "(FP)");
                 if ((instrRpt.Failed > 0 || c != 0) &&
                     !await HandleTestFailure("Instrument Tests", instrRpt, req.FailureAction, logger))
                     return Fin(false, "Stopped after instrument test failure");

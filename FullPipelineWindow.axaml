@@ -112,8 +112,8 @@
         <!-- Tests -->
         <Border Classes="hr"/>
         <TextBlock Classes="section" Text="TESTS" Foreground="#f9e2af"/>
-        <CheckBox x:Name="RunUnitCheck" Content="Run unit tests" IsCheckedChanged="TestCheck_Changed"/>
-        <CheckBox x:Name="RunInstrumentCheck" Content="Run instrument tests" IsCheckedChanged="TestCheck_Changed"/>
+        <CheckBox x:Name="RunUnitCheck" Content="Run productionRelease unit tests" IsCheckedChanged="TestCheck_Changed"/>
+        <CheckBox x:Name="RunInstrumentCheck" Content="Run productionRelease instrument tests" IsCheckedChanged="TestCheck_Changed"/>
         <TextBlock x:Name="InstrumentWarn" Classes="hint" Foreground="#f9e2af" IsVisible="False"
                    Margin="22,0,0,0"
                    Text="Instrument tests uninstall the app when they finish, deleting all of its data on the target device."/>

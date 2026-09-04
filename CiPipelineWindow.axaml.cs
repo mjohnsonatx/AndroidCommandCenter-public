@@ -26,8 +26,8 @@ public partial class CiPipelineWindow : Window
         DevBox.Text = config.DevBranch;
         StagingBox.Text = config.StagingBranch;
         MainBox.Text = config.MainBranch;
-        VariantBox.Text = config.GateVariant;
-        TestVariantBox.Text = config.TestVariant;
+        VariantBox.Text = CiPipelineConfig.ProductionReleaseVariant;
+        TestVariantBox.Text = CiPipelineConfig.ProductionReleaseVariant;
 
         LintCheck.IsChecked = config.RunLint;
         LintWarningsCheck.IsChecked = config.LintFailsOnWarning;
@@ -74,8 +74,8 @@ public partial class CiPipelineWindow : Window
         string dev = DevBox.Text?.Trim() ?? "";
         string staging = StagingBox.Text?.Trim() ?? "";
         string main = MainBox.Text?.Trim() ?? "";
-        string variant = VariantBox.Text?.Trim() ?? "";
-        string testVariant = TestVariantBox.Text?.Trim() ?? "";
+        string variant = CiPipelineConfig.ProductionReleaseVariant;
+        string testVariant = CiPipelineConfig.ProductionReleaseVariant;
         string prefix = TagPrefixBox.Text?.Trim() ?? "";
         var problems = new List<string>();
 

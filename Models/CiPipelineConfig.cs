@@ -7,19 +7,21 @@ namespace AndroidCommandCenter.Models;
 /// </summary>
 public sealed class CiPipelineConfig
 {
+    public const string ProductionReleaseVariant = "ProductionRelease";
+
     public string Remote { get; set; } = "origin";
     public string DevBranch { get; set; } = "dev";
     public string StagingBranch { get; set; } = "staging";
     public string MainBranch { get; set; } = "master";
 
-    /// <summary>Variant used for lint and build gates (usually a release variant).</summary>
-    public string GateVariant { get; set; } = "Release";
+    /// <summary>Production variant used for lint and the build gate.</summary>
+    public string GateVariant { get; set; } = ProductionReleaseVariant;
 
     /// <summary>
-    /// Variant used for unit and instrument tests. Android projects commonly
-    /// expose tests only for debug build types even when release is the build gate.
+    /// Production variant used for unit and instrument tests. Promotion CI
+    /// enforces this value even when older saved settings contain another variant.
     /// </summary>
-    public string TestVariant { get; set; } = "Debug";
+    public string TestVariant { get; set; } = ProductionReleaseVariant;
 
     // Gates
     public bool RunLint { get; set; } = true;

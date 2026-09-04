@@ -33,6 +33,8 @@ public sealed class LocalCiRunner
     public async Task<CiRunManifest> RunAsync(CiRequest req, CancellationToken ct)
     {
         var cfg = req.Config;
+        cfg.GateVariant = CiPipelineConfig.ProductionReleaseVariant;
+        cfg.TestVariant = CiPipelineConfig.ProductionReleaseVariant;
         string runId = $"{DateTime.Now:yyyyMMdd-HHmmss}-{Guid.NewGuid().ToString("N")[..6]}";
 
         var m = new CiRunManifest
@@ -219,8 +221,8 @@ public sealed class LocalCiRunner
             {
                 await Stage(m, log, "Lint", async st =>
                 {
-                    int code = await android.RunLint(cfg.GateVariant, ct);
-                    var report = LintReportService.Parse(wt, cfg.GateVariant);
+                    int code = await android.RunLint(ct);
+                    var report = LintReportService.Parse(wt, AndroidService.VerificationVariant);
                     log.Line(report.Summary);
                     if (report.Issues.Count > 0) log.Line(report.Detail);
 
@@ -250,7 +252,6 @@ public sealed class LocalCiRunner
             {
                 await Stage(m, log, "Unit tests", async st =>
                 {
-                    android.SelectedVariant = cfg.TestVariant;
                     var at = DateTime.Now;
                     int code = await android.RunUnitTests(ct, forceRerun: true);
                     var rpt = _testReports.ParseResults(wt, "UnitTests", at);
@@ -288,7 +289,6 @@ public sealed class LocalCiRunner
             {
                 await Stage(m, log, "Instrument tests", async st =>
                 {
-                    android.SelectedVariant = cfg.TestVariant;
                     // Unattended CI must not commandeer a physical phone and wipe
                     // its data. Require an emulator; bail if none is available.
                     var avd = new AvdManager(_runner, android.AdbPath, android.EmulatorPath);

@@ -43,6 +43,12 @@ public sealed class LocalCiRunner
         string trigger, bool dryRun, CancellationToken ct,
         IReadOnlyList<ICiStage>? stages = null)
     {
+        // Production promotion must validate the artifact that will actually be
+        // distributed. Override legacy saved Release/Debug values so lint,
+        // tests, and the build gate cannot drift to staging or debug variants.
+        config.GateVariant = CiPipelineConfig.ProductionReleaseVariant;
+        config.TestVariant = CiPipelineConfig.ProductionReleaseVariant;
+
         stages ??= DefaultStages;
         int progressTotal = stages.Count + 1; // configured stages + daemon cleanup
         string project = Path.GetFileName(profile.ProjectPath.TrimEnd('/', '\\'));
