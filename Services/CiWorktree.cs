@@ -12,6 +12,8 @@ namespace AndroidCommandCenter.Services;
 /// </summary>
 public sealed class CiWorktree : IAsyncDisposable
 {
+    private const string KeystorePropertiesFile = "keystore.properties";
+
     private readonly GitService _git;
     private readonly string _mainRepo;
     private readonly Action<string> _log;
@@ -98,6 +100,45 @@ public sealed class CiWorktree : IAsyncDisposable
         // used, because wiping Gradle caches on every run makes CI unusably slow.
         // -d removes untracked dirs that could poison the build.
         await _git.Run(Path, ct, "clean", "-fd");
+        CopyLocalSigningConfiguration(_mainRepo, Path, _log);
+    }
+
+    /// <summary>
+    /// Copy the git-ignored Android signing configuration from the developer's
+    /// primary checkout into the isolated CI worktree. The file contents are
+    /// deliberately never logged, and the worktree copy is restricted to the
+    /// current user on Unix-like systems.
+    /// </summary>
+    public static void CopyLocalSigningConfiguration(
+        string mainRepo, string worktreePath, Action<string> log)
+    {
+        string source = System.IO.Path.Combine(mainRepo, KeystorePropertiesFile);
+        if (!File.Exists(source))
+        {
+            log($"[worktree] no local {KeystorePropertiesFile} found in {mainRepo}");
+            return;
+        }
+
+        string destination = System.IO.Path.Combine(worktreePath, KeystorePropertiesFile);
+        File.Copy(source, destination, overwrite: true);
+
+        if (!OperatingSystem.IsWindows())
+        {
+            try
+            {
+                File.SetUnixFileMode(destination, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
+            catch (IOException)
+            {
+                // The copy is still usable on filesystems that do not support Unix modes.
+            }
+            catch (UnauthorizedAccessException)
+            {
+                // Gradle will report a clear error if it cannot read the copied file.
+            }
+        }
+
+        log($"[worktree] copied local {KeystorePropertiesFile} from the primary checkout");
     }
 
     public async Task RemoveAsync(CancellationToken ct)

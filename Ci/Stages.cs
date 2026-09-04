@@ -105,6 +105,12 @@ public sealed class SyncStage : ICiStage
         if (!reset.Ok) throw new StageFailedException($"Could not sync {ctx.Staging}:\n{reset.Output}");
         await ctx.Git.Run(ctx.Repo, ct, "clean", "-fd");
 
+        // keystore.properties is intentionally gitignored, so Git cannot put it
+        // in the isolated worktree. Pull the local copy from the selected Android
+        // checkout after cleaning and before any Gradle task runs.
+        CiWorktree.CopyLocalSigningConfiguration(
+            ctx.Profile.ProjectPath, ctx.ProjectPath, ctx.Info);
+
         var m = ctx.Manifest;
         m.StagingSha = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
         m.MainShaBefore = await ctx.Git.RevParse(ctx.Repo, $"{ctx.Remote}/{ctx.Main}", ct);
