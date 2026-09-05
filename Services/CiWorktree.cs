@@ -7,8 +7,8 @@ namespace AndroidCommandCenter.Services;
 /// <summary>
 /// An isolated git worktree for a CI run. Your primary checkout is never
 /// touched: no branch switching, no reset, no stashing of your work in progress.
-/// The worktree is reused across runs (so Gradle caches stay warm) but always
-/// hard-reset to the target commit before use.
+/// The temporary checkout is removed when the run finishes. A leftover from an
+/// interrupted application can be recovered before the next run.
 /// </summary>
 public sealed class CiWorktree : IAsyncDisposable
 {
@@ -28,8 +28,9 @@ public sealed class CiWorktree : IAsyncDisposable
 
     public static async Task<CiWorktree> CreateAsync(
         GitService git, string mainRepo, string projectName,
-        Action<string> log, CancellationToken ct, bool keep = true)
+        Action<string> log, CancellationToken ct, bool keep = false)
     {
+        ct.ThrowIfCancellationRequested();
         string root = System.IO.Path.Combine(Paths.CacheDir, "ci-worktrees");
         Directory.CreateDirectory(root);
         string canonical = System.IO.Path.GetFullPath(mainRepo);
@@ -39,30 +40,40 @@ public sealed class CiWorktree : IAsyncDisposable
 
         var wt = new CiWorktree(git, mainRepo, path, log, keep);
 
-        if (Directory.Exists(System.IO.Path.Combine(path, ".git")) ||
-            File.Exists(System.IO.Path.Combine(path, ".git")))
+        try
         {
-            log($"[worktree] reusing {path}");
-            // Prune stale registrations, then make sure it's actually usable.
-            await git.Run(mainRepo, ct, "worktree", "prune");
-            if (!await git.IsRepo(path, ct))
+            if (Directory.Exists(System.IO.Path.Combine(path, ".git")) ||
+                File.Exists(System.IO.Path.Combine(path, ".git")))
             {
-                log("[worktree] existing directory is not a valid worktree — recreating.");
-                await wt.RemoveAsync(ct);
+                log($"[worktree] recovering {path}");
+                if (!await git.IsRepo(path, ct))
+                {
+                    log("[worktree] existing directory is not a valid worktree — recreating.");
+                    await wt.RemoveAsync(ct);
+                    await wt.AddAsync(ct);
+                }
+            }
+            else
+            {
                 await wt.AddAsync(ct);
             }
+
+            // Recover a merge interrupted by an application crash before preflight.
+            await wt.RecoverAsync(ct);
+            return wt;
         }
-        else
+        catch
         {
-            await wt.AddAsync(ct);
+            // Creation may have succeeded before recovery/cancellation failed.
+            // No caller received the object, so it cannot dispose of it for us.
+            try
+            {
+                using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                await wt.RemoveAsync(cleanup.Token);
+            }
+            catch (Exception ex) { log($"[warn] Worktree setup cleanup failed at {path}: {ex.Message}"); }
+            throw;
         }
-
-        // A cancelled process can leave a reusable worktree in the middle of a
-        // merge/revert. Recover it before preflight so an interrupted run cannot
-        // poison the next build.
-        await wt.RecoverAsync(ct);
-
-        return wt;
     }
 
     private async Task RecoverAsync(CancellationToken ct)
@@ -143,18 +154,22 @@ public sealed class CiWorktree : IAsyncDisposable
 
     public async Task RemoveAsync(CancellationToken ct)
     {
-        await _git.Run(_mainRepo, ct, "worktree", "remove", "--force", Path);
-        if (Directory.Exists(Path))
-        {
-            try { Directory.Delete(Path, recursive: true); } catch { }
-        }
-        await _git.Run(_mainRepo, ct, "worktree", "prune");
+        _log($"[worktree] removing {Path}");
+        // Let Git validate ownership and remove its registration along with the
+        // checkout. Never silently fall back to recursively deleting a directory
+        // when Git refused to remove it (for example a locked worktree).
+        var result = await _git.Run(_mainRepo, ct, "worktree", "remove", "--force", Path);
+        if (!result.Ok || Directory.Exists(Path))
+            throw new IOException($"Could not remove CI worktree at {Path}:\n{result.Output}");
+        _log($"[worktree] removed {Path}");
     }
 
     public async ValueTask DisposeAsync()
     {
         if (_keep) { _log($"[worktree] kept at {Path} (warm caches)"); return; }
-        await RemoveAsync(CancellationToken.None);
+        // Aborting a build must not cancel removal of its temporary checkout.
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await RemoveAsync(cleanup.Token);
     }
 
     private static string Sanitize(string s) =>

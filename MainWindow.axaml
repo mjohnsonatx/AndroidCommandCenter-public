@@ -108,7 +108,6 @@
               <StackPanel>
                 <Button x:Name="CancelButton" Classes="nav danger" Content="⏹ Abort Current Operation" Click="Cancel_Click"
                         IsEnabled="False"/>
-                <Button Classes="nav" Content="🗑 Clear Log" Click="ClearLog_Click"/>
               </StackPanel>
             </Border>
             <ScrollViewer>
@@ -206,8 +205,8 @@
         <GridSplitter Grid.Column="1" Width="4" ResizeDirection="Columns"/>
 
         <!-- RIGHT -->
-        <Grid Grid.Column="2" RowDefinitions="*,4,220">
-          <TabControl Grid.Row="0">
+        <Grid x:Name="WorkspaceGrid" Grid.Column="2" RowDefinitions="*,0,Auto">
+          <TabControl x:Name="WorkspaceTabs" Grid.Row="0">
             <!-- SOURCE -->
             <TabItem Header="Source">
               <ScrollViewer Padding="18">
@@ -407,13 +406,11 @@
             </TabItem>
           </TabControl>
 
-          <GridSplitter Grid.Row="1" Height="4" ResizeDirection="Rows"/>
+          <GridSplitter x:Name="LogSplitter" Grid.Row="1" Height="6" ResizeDirection="Rows"
+                        ResizeBehavior="PreviousAndNext" IsVisible="False"
+                        DragCompleted="LogSplitter_DragCompleted" ToolTip.Tip="Drag to resize the log panel"/>
 
-          <Border Grid.Row="2" Margin="4" BorderBrush="{StaticResource Surface1Brush}" BorderThickness="1" CornerRadius="4">
-            <TextBox x:Name="LogBox" Classes="log"
-                     ScrollViewer.VerticalScrollBarVisibility="Auto"
-                     ScrollViewer.HorizontalScrollBarVisibility="Auto"/>
-          </Border>
+          <ui:ActivityLogPanel x:Name="ActivityLog" Grid.Row="2" Margin="4"/>
         </Grid>
       </Grid>
     </DockPanel>

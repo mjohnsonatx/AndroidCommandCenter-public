@@ -1,0 +1,57 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             x:Class="AndroidCommandCenter.UI.ActivityLogPanel">
+  <UserControl.Styles>
+    <Style Selector="ListBox.log-output > ListBoxItem">
+      <Setter Property="Padding" Value="4,1"/>
+      <Setter Property="MinHeight" Value="0"/>
+    </Style>
+  </UserControl.Styles>
+  <Border Background="{StaticResource CrustBrush}" BorderBrush="{StaticResource Surface1Brush}"
+          BorderThickness="1" CornerRadius="6" ClipToBounds="True">
+    <Grid RowDefinitions="Auto,*">
+      <Border Background="{StaticResource MantleBrush}" Padding="10,4">
+        <Grid ColumnDefinitions="Auto,*,Auto">
+          <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center" Margin="0,0,14,0">
+            <Border x:Name="ActivityDot" Width="6" Height="6" CornerRadius="3"
+                    Background="{StaticResource Overlay0Brush}"/>
+            <TextBlock Text="Activity" FontWeight="SemiBold" FontSize="13"/>
+          </StackPanel>
+          <TextBlock Grid.Column="1" x:Name="ActivitySummary" Text="No output yet"
+                     Foreground="{StaticResource Overlay0Brush}" FontSize="12"
+                     TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="0,0,12,0"/>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="3">
+            <TextBlock x:Name="LineCount" Foreground="{StaticResource Overlay0Brush}"
+                       FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Button x:Name="FollowButton" Classes="cmd compact" Content="Pause" IsVisible="False"
+                    Click="Follow_Click" ToolTip.Tip="Pause the view to read or select text; output keeps collecting"/>
+            <Button x:Name="FocusButton" Classes="cmd compact" Content="Expand" IsVisible="False"
+                    Click="Focus_Click" ToolTip.Tip="Give the log the full workspace; restore to show Source, Issues, and Reports"/>
+            <Button x:Name="ToggleButton" Classes="cmd compact" Content="Show log" Click="Toggle_Click"/>
+            <Button Classes="cmd compact" Content="Clear" Click="Clear_Click" ToolTip.Tip="Clear the display history"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <ListBox Grid.Row="1" x:Name="OutputList" Classes="log-output" IsVisible="False"
+               SelectionMode="Multiple" Background="Transparent" BorderThickness="0" Padding="8"
+               ScrollViewer.VerticalScrollBarVisibility="Auto"
+               ScrollViewer.HorizontalScrollBarVisibility="Auto">
+        <ListBox.ItemsPanel>
+          <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+        </ListBox.ItemsPanel>
+        <ListBox.ItemTemplate>
+          <DataTemplate>
+            <TextBlock Text="{Binding}" FontFamily="{StaticResource MonoFont}" FontSize="12"
+                       Foreground="{StaticResource Subtext0Brush}"/>
+          </DataTemplate>
+        </ListBox.ItemTemplate>
+        <ListBox.ContextMenu>
+          <ContextMenu>
+            <MenuItem Header="Copy selected lines" Click="CopySelected_Click" InputGesture="Ctrl+C"/>
+            <MenuItem Header="Copy displayed log" Click="CopyAll_Click"/>
+          </ContextMenu>
+        </ListBox.ContextMenu>
+      </ListBox>
+    </Grid>
+  </Border>
+</UserControl>

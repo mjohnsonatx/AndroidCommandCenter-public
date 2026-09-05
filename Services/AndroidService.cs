@@ -207,7 +207,7 @@ public sealed class AndroidService
     public Task<int> RunUnitTests(CancellationToken ct, bool forceRerun)
     {
         var args = GradleArgs($"test{VerificationVariant}UnitTest");
-        // CI worktrees keep warm build caches between runs. Force only CI test
+        // Gradle may restore cached outputs. Force only CI test
         // executions so the report parser receives fresh JUnit XML instead of
         // accidentally accepting (or rejecting) an old UP-TO-DATE result.
         if (forceRerun) args.Add("--rerun-tasks");

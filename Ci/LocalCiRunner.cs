@@ -50,7 +50,7 @@ public sealed class LocalCiRunner
         config.TestVariant = CiPipelineConfig.ProductionReleaseVariant;
 
         stages ??= DefaultStages;
-        int progressTotal = stages.Count + 1; // configured stages + daemon cleanup
+        int progressTotal = stages.Count + 2; // stages + daemon/worktree cleanup
         string project = Path.GetFileName(profile.ProjectPath.TrimEnd('/', '\\'));
         var logger = new PipelineLogger("CI", project, Paths.PipelineLogs);
 
@@ -72,7 +72,7 @@ public sealed class LocalCiRunner
             runLock = AcquireRunLock(profile.ProjectPath);
             worktree = await CiWorktree.CreateAsync(
                 _git, profile.ProjectPath, project,
-                m => LogMessage?.Invoke(m), ct, keep: true);
+                message => { logger.Line(message); LogMessage?.Invoke(message); }, ct);
         }
         catch (OperationCanceledException)
         {
@@ -101,8 +101,7 @@ public sealed class LocalCiRunner
             return manifest;
         }
 
-        _android.ProjectPath = worktree.Path;
-        _android.SelectedVariant = config.GateVariant;
+        using var releaseRunLock = runLock;
 
         var ctx = new CiContext
         {
@@ -112,11 +111,13 @@ public sealed class LocalCiRunner
             Logger = logger, Log = m => LogMessage?.Invoke(m)
         };
 
-        ctx.Info($"CI run {manifest.RunId} — {project} — {config.StagingBranch} → {config.MainBranch}" +
-                 (dryRun ? " [DRY RUN]" : ""));
-
         try
         {
+            _android.ProjectPath = worktree.Path;
+            _android.SelectedVariant = config.GateVariant;
+            ctx.Info($"CI run {manifest.RunId} — {project} — {config.StagingBranch} → {config.MainBranch}" +
+                     (dryRun ? " [DRY RUN]" : ""));
+
             for (int stageIndex = 0; stageIndex < stages.Count; stageIndex++)
             {
                 ct.ThrowIfCancellationRequested();
@@ -198,44 +199,80 @@ public sealed class LocalCiRunner
                     : "All gates passed";
             }
         }
+        catch (OperationCanceledException)
+        {
+            manifest.Success = false;
+            manifest.Result = "Cancelled";
+            throw;
+        }
         finally
         {
-            manifest.FinishedAt = DateTime.UtcNow;
-
-            // Stop Gradle daemons, but keep this final command attached to the
-            // operation token so the UI Abort button can terminate it too.
+            // Cleanup has its own bounded token. The build's cancellation must
+            // not skip daemon shutdown or leave the temporary checkout behind.
             var cleanup = new StageRecord
             {
                 Name = "Stop Gradle daemons",
-                Status = ct.IsCancellationRequested ? StageStatus.Skipped : StageStatus.Running,
-                StartedAt = DateTime.UtcNow,
-                Summary = ct.IsCancellationRequested ? "Skipped because the run was aborted." : ""
+                Status = StageStatus.Running,
+                StartedAt = DateTime.UtcNow
             };
             manifest.Stages.Add(cleanup);
-            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, cleanup));
-            if (!ct.IsCancellationRequested)
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal - 1, progressTotal, cleanup));
+            try
             {
-                try
-                {
-                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    timeout.CancelAfter(TimeSpan.FromSeconds(20));
-                    await _android.StopDaemons(timeout.Token);
-                    cleanup.Status = StageStatus.Passed;
-                    cleanup.Summary = "Gradle daemons stopped.";
-                }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
-                {
-                    cleanup.Status = StageStatus.Skipped;
-                    cleanup.Summary = "Daemon cleanup aborted by user.";
-                }
-                catch (Exception ex)
-                {
-                    cleanup.Status = StageStatus.Warning;
-                    cleanup.Summary = ex.Message;
-                }
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                int code = await _android.StopDaemons(timeout.Token);
+                cleanup.ExitCode = code;
+                cleanup.Status = code == 0 ? StageStatus.Passed : StageStatus.Warning;
+                cleanup.Summary = code == 0 ? "Gradle daemons stopped." : $"Gradle shutdown exited {code}.";
+            }
+            catch (Exception ex)
+            {
+                cleanup.Status = StageStatus.Warning;
+                cleanup.Summary = ex is OperationCanceledException ? "Gradle shutdown timed out." : ex.Message;
             }
             cleanup.FinishedAt = DateTime.UtcNow;
-            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, cleanup));
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal - 1, progressTotal, cleanup));
+            ctx.Info($"[cleanup] {cleanup.Summary}");
+
+            var worktreeCleanup = new StageRecord
+            {
+                Name = "Remove isolated worktree",
+                Status = StageStatus.Running,
+                StartedAt = DateTime.UtcNow
+            };
+            manifest.Stages.Add(worktreeCleanup);
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, worktreeCleanup));
+            try
+            {
+                // Detached commits must remain reachable even when pushing was
+                // disabled or failed. Removing the checkout must not lose them
+                // to a later Git garbage collection.
+                using var retainTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                var retainedRefs = new Dictionary<string, string>();
+                foreach (var (name, sha) in new[] { ("production", manifest.MergeSha), ("dev", manifest.BackMergeSha) })
+                {
+                    if (string.IsNullOrWhiteSpace(sha)) continue;
+                    string reference = $"refs/acc-ci/runs/{manifest.RunId}/{name}";
+                    await _git.Require(profile.ProjectPath, retainTimeout.Token, "update-ref", reference, sha);
+                    retainedRefs[reference] = sha;
+                }
+                if (retainedRefs.Count > 0) worktreeCleanup.Data["retainedRefs"] = retainedRefs;
+                PreserveRecordedArtifacts(manifest, worktree.Path);
+                await worktree.DisposeAsync();
+                worktreeCleanup.Status = StageStatus.Passed;
+                worktreeCleanup.Summary = "Temporary checkout removed; run records and artifacts retained.";
+            }
+            catch (Exception ex)
+            {
+                worktreeCleanup.Status = StageStatus.Warning;
+                worktreeCleanup.Summary = $"Worktree cleanup needs attention at {worktree.Path}: {ex.Message}";
+                worktreeCleanup.Failure = new FailureContext { Message = ex.Message, Exception = ex.ToString() };
+                manifest.Result += " (worktree cleanup needs attention)";
+                ctx.Info($"[warn] {worktreeCleanup.Summary}");
+            }
+            worktreeCleanup.FinishedAt = DateTime.UtcNow;
+            ProgressChanged?.Invoke(new CiRunProgress(progressTotal, progressTotal, worktreeCleanup));
+            manifest.FinishedAt = DateTime.UtcNow;
 
             ctx.Info($"Result: {manifest.Result} ({manifest.DurationSeconds:F0}s)");
 
@@ -251,8 +288,6 @@ public sealed class LocalCiRunner
 
             logger.Save();
             SaveManifest(manifest);
-            try { await worktree.DisposeAsync(); }
-            finally { runLock?.Dispose(); }
         }
         return manifest;
     }
@@ -284,6 +319,28 @@ public sealed class LocalCiRunner
     }
 
     private static string FirstLine(string s) => s.Split('\n')[0].Trim();
+
+    private static void PreserveRecordedArtifacts(CiRunManifest manifest, string worktreePath)
+    {
+        // These paths used to point into the cached checkout. Keep recorded
+        // APK/lint artifacts beside the manifest before removing that checkout.
+        string destinationRoot = Path.Combine(Paths.CiRuns, manifest.RunId + "-artifacts");
+        foreach (var stage in manifest.Stages)
+        {
+            foreach (string key in new[] { "apk", "xml", "html" })
+            {
+                if (!stage.Data.TryGetValue(key, out var value) || value is not string source || !File.Exists(source))
+                    continue;
+                string relative = Path.GetRelativePath(worktreePath, source);
+                if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith(".." + Path.DirectorySeparatorChar))
+                    continue;
+                string destination = Path.Combine(destinationRoot, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
+                File.Copy(source, destination, overwrite: true);
+                stage.Data[key] = destination;
+            }
+        }
+    }
 
     public static void SaveManifest(CiRunManifest m)
     {

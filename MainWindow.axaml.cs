@@ -1,5 +1,4 @@
-﻿using System.Collections.Concurrent;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Collections.ObjectModel;
 using System.Globalization;
 using System.IO;
@@ -55,8 +54,6 @@ public partial class MainWindow : Window
 
     private readonly DispatcherTimer _deviceTimer;
     private readonly DispatcherTimer _automationTimer;
-    private readonly DispatcherTimer _logFlushTimer;
-    private readonly ConcurrentQueue<string> _pendingLogLines = new();
 
     private CancellationTokenSource? _cts;
     private bool _isRunning;
@@ -65,6 +62,7 @@ public partial class MainWindow : Window
     private int _operationTotal;
     private bool _deviceRefreshing;
     private bool _uiReady;
+    private double _logPanelShare = 0.4;
 
     private const string AllDevices = "(All connected)";
 
@@ -79,15 +77,7 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
 
-        // Tool output can arrive far faster than the UI can render it. Flush it
-        // in bounded, low-priority batches so input, resize, and window-manager
-        // events stay responsive during long Gradle and Git operations.
-        _logFlushTimer = new DispatcherTimer(DispatcherPriority.Background)
-        {
-            Interval = TimeSpan.FromMilliseconds(100)
-        };
-        _logFlushTimer.Tick += (_, _) => FlushPendingLogs();
-        _logFlushTimer.Start();
+        ActivityLog.LayoutRequested += (_, _) => UpdateLogLayout();
 
         _settings = AppSettings.Load(m => Log(m));
         _profiles = new ProjectProfileService(_secrets);
@@ -226,8 +216,6 @@ public partial class MainWindow : Window
     {
         _deviceTimer.Stop();
         _automationTimer.Stop();
-        _logFlushTimer.Stop();
-        FlushPendingLogs();
         _cts?.Cancel();
         _dashboard.Dispose();
         base.OnClosed(e);
@@ -237,48 +225,43 @@ public partial class MainWindow : Window
 
     #region Logging and status
 
-    private const int MaxLogChars = 400_000;
-    private const int MaxLogFlushChars = 64_000;
-
     private void QueueLog(string msg)
     {
         // File logging is deliberately done before UI batching. A window close
         // or a busy dispatcher can delay rendering, but must never lose the
         // durable pipeline log.
         _pipelineLogger?.Line(msg);
-        _pendingLogLines.Enqueue(msg);
+        ActivityLog.Append(msg);
     }
 
-    private void FlushPendingLogs()
+    private void UpdateLogLayout()
     {
-        if (!Dispatcher.UIThread.CheckAccess())
-        {
-            Dispatcher.UIThread.Post(FlushPendingLogs, DispatcherPriority.Background);
-            return;
-        }
+        var layout = ActivityLog.Layout;
+        WorkspaceTabs.IsVisible = layout != ActivityLogLayout.Focused;
+        LogSplitter.IsVisible = layout == ActivityLogLayout.Docked;
+        WorkspaceGrid.RowDefinitions[0].Height = layout == ActivityLogLayout.Focused
+            ? new GridLength(0) : new GridLength(1 - _logPanelShare, GridUnitType.Star);
+        WorkspaceGrid.RowDefinitions[0].MinHeight = layout == ActivityLogLayout.Docked ? 120 : 0;
+        WorkspaceGrid.RowDefinitions[1].Height = new GridLength(layout == ActivityLogLayout.Docked ? 6 : 0);
+        WorkspaceGrid.RowDefinitions[2].Height = layout == ActivityLogLayout.Compact
+            ? GridLength.Auto : new GridLength(_logPanelShare, GridUnitType.Star);
+        WorkspaceGrid.RowDefinitions[2].MinHeight = layout == ActivityLogLayout.Compact ? 0 : 140;
+    }
 
-        var batch = new StringBuilder();
-        while (batch.Length < MaxLogFlushChars && _pendingLogLines.TryDequeue(out var line))
-            batch.AppendLine(line);
-
-        if (batch.Length == 0) return;
-
-        string combined = (LogBox.Text ?? string.Empty) + batch;
-        if (combined.Length > MaxLogChars)
-        {
-            const string marker = "…(trimmed)…\n";
-            int keep = MaxLogChars - marker.Length;
-            combined = marker + combined[^keep..];
-        }
-
-        LogBox.Text = combined;
-        LogBox.CaretIndex = combined.Length;
+    private void LogSplitter_DragCompleted(object? sender, Avalonia.Input.VectorEventArgs e)
+    {
+        double availableHeight = WorkspaceGrid.RowDefinitions[0].ActualHeight +
+                                 WorkspaceGrid.RowDefinitions[2].ActualHeight;
+        if (availableHeight > 0)
+            _logPanelShare = Math.Clamp(WorkspaceGrid.RowDefinitions[2].ActualHeight / availableHeight, 0.15, 0.85);
+        ActivityLog.KeepExpanded();
     }
 
     private void Log(string msg) => QueueLog(msg);
 
     private void SetStatus(string text)
     {
+        ActivityLog.SetOperationStatus(text);
         StatusLabel.Text = text;
         StatusLabel.Foreground = text == "Idle" ? IdleBrush : BusyBrush;
         BusySpinner.IsVisible = text != "Idle" && _operationTotal <= 0;
@@ -360,6 +343,7 @@ public partial class MainWindow : Window
 
     private void EnterBusy(string status, int totalSteps = 1)
     {
+        ActivityLog.BeginOperation(status);
         _isRunning = true;
         _operationName = status;
         _operationCurrent = 0;
@@ -387,6 +371,7 @@ public partial class MainWindow : Window
 
     private void ExitBusy()
     {
+        ActivityLog.EndOperation();
         _isRunning = false;
         SidebarOps.IsEnabled = true;
         ProjectCombo.IsEnabled = true;
@@ -504,13 +489,6 @@ public partial class MainWindow : Window
         OperationProgressLabel.Text = $"Abort requested · stopping {_operationName} process tree…";
         _operationTotal = 0;
         SetStatus("Aborting");
-    }
-
-    private void ClearLog_Click(object? s, RoutedEventArgs e)
-    {
-        _pendingLogLines.Clear();
-        LogBox.Text = "";
-        _toasts.Clear();
     }
 
     #endregion
@@ -2161,7 +2139,7 @@ public partial class MainWindow : Window
         string originalVariant = _android.SelectedVariant;
         string? originalTarget = _android.TargetDevice;
         EnterBusy(dryRun ? "Validating promotion" : "Running promotion CI",
-            AndroidCommandCenter.Ci.LocalCiRunner.DefaultStages.Count + 1);
+            AndroidCommandCenter.Ci.LocalCiRunner.DefaultStages.Count + 2);
         Log($"\n===== Promotion CI{(dryRun ? " [DRY RUN]" : "")} =====");
         try
         {
