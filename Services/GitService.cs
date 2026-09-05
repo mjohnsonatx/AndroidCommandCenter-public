@@ -121,8 +121,12 @@ public class GitService
         if (branch is not null) branch = GitNames.Require(branch, "branch");
 
         var args = new List<string> { "fetch", "--prune", "--tags", remote };
-        if (branch is not null)
-            args.Add($"+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
+        // Do not inherit a single-branch clone's narrow fetch refspec: CI must
+        // refresh every branch it compares. '+' only refreshes local tracking
+        // refs; it is never used for a push.
+        args.Add(branch is null
+            ? $"+refs/heads/*:refs/remotes/{remote}/*"
+            : $"+refs/heads/{branch}:refs/remotes/{remote}/{branch}");
 
         string remoteUrl = (await Run(projectPath, ct,
             "remote", "get-url", remote)).Output.Trim();
@@ -150,6 +154,23 @@ public class GitService
         var result = await Run(projectPath, ct, "show-ref", "--verify", "--quiet",
             $"refs/remotes/{remote}/{branch}");
         return result.Ok;
+    }
+
+    public async Task<Dictionary<string, string>> ReadRemoteRefs(
+        string projectPath, string remote, string? token, CancellationToken ct)
+    {
+        remote = GitNames.Require(remote, "remote");
+        string url = (await Require(projectPath, ct, "remote", "get-url", remote)).Trim();
+        string[] args = ["ls-remote", "--refs", remote];
+        LogMessage?.Invoke($"$ git ls-remote --refs {remote}");
+        var result = url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(token)
+            ? await RunWithToken(projectPath, args, token, ct)
+            : await RunCredentialIsolated(projectPath, args, ct);
+        if (!result.Ok) throw new InvalidOperationException($"Could not inspect remote refs:\n{result.Output}");
+        return result.Output.Split('\n', StringSplitOptions.RemoveEmptyEntries)
+            .Select(line => line.Trim().Split('\t'))
+            .Where(parts => parts.Length == 2 && IsObjectId(parts[0]))
+            .ToDictionary(parts => parts[1], parts => parts[0], StringComparer.Ordinal);
     }
 
     public async Task<GitResult> ResetToRemote(
@@ -250,6 +271,22 @@ public class GitService
         return Run(projectPath, ct, "push", "--porcelain", remote, refspec);
     }
 
+    public async Task<GitResult> PushToRemote(
+        string projectPath, string remote, string refspec, string? token, CancellationToken ct)
+    {
+        remote = GitNames.Require(remote, "remote");
+        string[] parts = refspec.Split(':');
+        if (parts.Length != 2 || !IsSafePushRef(parts[0], source: true) || !IsSafePushRef(parts[1], source: false))
+            throw new ArgumentException($"Invalid push refspec '{refspec}'.", nameof(refspec));
+        string url = (await Require(projectPath, ct, "remote", "get-url", "--push", remote)).Trim();
+        string[] args = ["-c", $"remote.{remote}.mirror=false", "-c", "push.followTags=false", "push", "--porcelain", remote, refspec];
+        bool authenticated = url.StartsWith("https://", StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(token);
+        LogMessage?.Invoke($"$ git push --porcelain {remote} {refspec}" + (authenticated ? " (authenticated)" : ""));
+        return authenticated
+            ? await RunWithToken(projectPath, args, token!, ct)
+            : await RunCredentialIsolated(projectPath, args, ct);
+    }
+
     public async Task<GitResult> PushWithToken(
         string projectPath, string owner, string repository, string token,
         string refspec, CancellationToken ct)
@@ -265,6 +302,96 @@ public class GitService
         return await RunWithToken(projectPath,
             ["push", "--porcelain", url, refspec], token, ct);
     }
+
+    /// <summary>
+    /// Publish an all-or-nothing release to the configured remote. The temporary
+    /// pre-push guard compares the server's advertised old OIDs, including when
+    /// a concurrent rewind would otherwise look like a valid fast-forward.
+    /// Git's receive transaction checks those OIDs again under the ref locks.
+    /// No force/lease option or non-atomic fallback is permitted.
+    /// </summary>
+    public async Task<GitResult> PushAtomic(
+        string projectPath, string remote, IReadOnlyList<string> refspecs,
+        IReadOnlyDictionary<string, string> expectedHeads, string? token, CancellationToken ct)
+    {
+        remote = GitNames.Require(remote, "remote");
+        var destinations = new HashSet<string>(StringComparer.Ordinal);
+        foreach (string spec in refspecs)
+        {
+            string[] parts = spec.Split(':');
+            if (parts.Length != 2 || !IsSafePushRef(parts[0], source: true) ||
+                !IsSafePushRef(parts[1], source: false) || !destinations.Add(parts[1]) ||
+                !expectedHeads.TryGetValue(parts[1], out string? old) ||
+                (old.Length != 0 && !IsObjectId(old)))
+                throw new ArgumentException($"Invalid guarded push refspec '{spec}'.", nameof(refspecs));
+        }
+        if (destinations.Count == 0 || destinations.Count != expectedHeads.Count)
+            throw new ArgumentException("Every atomic push destination must have exactly one expected head.");
+
+        string fetchUrl = (await Require(projectPath, ct, "remote", "get-url", remote)).Trim();
+        string pushUrls = (await Require(projectPath, ct, "remote", "get-url", "--push", "--all", remote)).Trim();
+        if (fetchUrl != pushUrls)
+            return new GitResult(2, "Atomic promotion requires one push URL matching the fetch URL, " +
+                "so the validated branches and published branches belong to the same repository.");
+
+        string originalHook = (await Require(projectPath, ct, "rev-parse",
+            "--path-format=absolute", "--git-path", "hooks/pre-push")).Trim();
+        string hookDir = Directory.CreateTempSubdirectory("acc-release-push-").FullName;
+        try
+        {
+            string input = ShellQuote(Path.Combine(hookDir, "updates"));
+            var script = new System.Text.StringBuilder("#!/bin/sh\nset -eu\n");
+            script.AppendLine($"cat > {input}");
+            // Preserve the repository's policy hooks rather than bypassing them.
+            script.AppendLine($"if [ -x {ShellQuote(originalHook)} ]; then {ShellQuote(originalHook)} \"$@\" < {input}; fi");
+            script.AppendLine("count=0\nwhile read -r local_ref local_oid remote_ref remote_oid; do\n  case \"$remote_ref\" in");
+            foreach (var (reference, old) in expectedHeads)
+            {
+                string matches = old.Length == 0
+                    ? $"{{ [ \"$remote_oid\" = {new string('0', 40)} ] || [ \"$remote_oid\" = {new string('0', 64)} ]; }}"
+                    : $"[ \"$remote_oid\" = {ShellQuote(old)} ]";
+                script.AppendLine($"    {ShellQuote(reference)}) {matches} || {{ echo \"Release aborted: $remote_ref changed since validation ($remote_oid).\" >&2; exit 1; }} ;;");
+            }
+            script.AppendLine("    *) echo \"Unexpected release ref: $remote_ref\" >&2; exit 1 ;;\n  esac\n  count=$((count + 1))");
+            script.AppendLine($"done < {input}");
+            script.AppendLine($"[ \"$count\" -eq {destinations.Count} ] || {{ echo 'Release refs changed or are already published; inspect the remote before retrying.' >&2; exit 1; }}");
+            string hook = Path.Combine(hookDir, "pre-push");
+            // Git for Windows also runs this hook through sh, which requires LF.
+            await File.WriteAllTextAsync(hook, script.ToString().Replace("\r\n", "\n"), ct);
+            if (!OperatingSystem.IsWindows())
+                File.SetUnixFileMode(hook, UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+
+            var args = new List<string>
+            {
+                "-c", $"core.hooksPath={hookDir}", "-c", $"remote.{remote}.mirror=false",
+                "-c", "push.followTags=false", "push", "--atomic", "--porcelain", remote
+            };
+            args.AddRange(refspecs);
+            bool authenticated = fetchUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase) &&
+                                 !string.IsNullOrWhiteSpace(token);
+            LogMessage?.Invoke($"$ git push --atomic --porcelain {remote} {string.Join(' ', refspecs)}" +
+                               (authenticated ? " (authenticated)" : ""));
+            return authenticated
+                ? await RunWithToken(projectPath, args, token!, ct)
+                : await RunCredentialIsolated(projectPath, args, ct);
+        }
+        finally
+        {
+            try { Directory.Delete(hookDir, recursive: true); } catch { }
+        }
+    }
+
+    private static bool IsObjectId(string value) =>
+        value.Length is 40 or 64 && value.All(Uri.IsHexDigit);
+
+    private static bool IsSafePushRef(string value, bool source) =>
+        (source && IsObjectId(value)) ||
+        ((value.StartsWith("refs/heads/", StringComparison.Ordinal) ||
+          value.StartsWith("refs/tags/", StringComparison.Ordinal)) &&
+         value == value.Trim() && GitNames.IsValid(value));
+
+    private static string ShellQuote(string path) =>
+        "'" + (OperatingSystem.IsWindows() ? path.Replace('\\', '/') : path).Replace("'", "'\"'\"'") + "'";
 
     public async Task<GitResult> RevertMerge(
         string projectPath, string mergeRevision, CancellationToken ct)

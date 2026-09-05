@@ -31,6 +31,8 @@ public sealed class PreflightStage : ICiStage
 
         foreach (var b in new[] { ctx.Dev, ctx.Staging, ctx.Main })
             if (!Models.GitNames.IsValid(b)) problems.Add($"Invalid branch name '{b}'.");
+        if (new[] { ctx.Dev, ctx.Staging, ctx.Main }.Distinct(StringComparer.Ordinal).Count() != 3)
+            problems.Add("Development, staging, and production must be different branches.");
         if (!Models.GitNames.IsValid(ctx.Remote)) problems.Add($"Invalid remote '{ctx.Remote}'.");
 
         if (problems.Count == 0 && await ctx.Git.IsDirty(ctx.Repo, ct))
@@ -95,6 +97,8 @@ public sealed class SyncStage : ICiStage
         foreach (var b in new[] { ctx.Staging, ctx.Main, ctx.Dev })
             if (!await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, b, ct))
                 throw new StageFailedException($"Branch '{b}' does not exist on '{ctx.Remote}'.");
+        if (new[] { ctx.Dev, ctx.Staging, ctx.Main }.Distinct(StringComparer.Ordinal).Count() != 3)
+            throw new StageFailedException("Development, staging, and production must be different branches.");
 
         var checkout = await ctx.Git.Run(
             ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Staging}");
@@ -115,9 +119,43 @@ public sealed class SyncStage : ICiStage
         m.StagingSha = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
         m.MainShaBefore = await ctx.Git.RevParse(ctx.Repo, $"{ctx.Remote}/{ctx.Main}", ct);
 
+        // Check history before the no-op shortcut, including merge-only history.
+        // A merge preserves main's commits, but its result might differ from the
+        // staging tree that passed the gates. Both metadata and hotfix gaps block.
+        var behind = await ctx.Git.CountBetween(ctx.Repo, m.StagingSha, m.MainShaBefore, ct);
+        var devSha = await ctx.Git.RevParse(ctx.Repo, $"{ctx.Remote}/{ctx.Dev}", ct);
+        var devBehind = await ctx.Git.CountBetween(ctx.Repo, devSha, m.MainShaBefore, ct);
+        rec.Data["stagingMissingProductionCommits"] = behind;
+        rec.Data["devMissingProductionCommits"] = devBehind;
+        if (behind > 0)
+        {
+            string missing = await ctx.Git.Require(ctx.Repo, ct, "log", "--format=%h %s",
+                $"{m.StagingSha}..{m.MainShaBefore}");
+            string[] bases = (await ctx.Git.Require(ctx.Repo, ct, "merge-base", "--all",
+                m.StagingSha, m.MainShaBefore)).Split('\n', StringSplitOptions.RemoveEmptyEntries);
+            string mainTree = await ctx.Git.RevParse(ctx.Repo, $"{m.MainShaBefore}^{{tree}}", ct);
+            bool historyOnly = bases.Length == 1 &&
+                mainTree == await ctx.Git.RevParse(ctx.Repo, $"{bases[0]}^{{tree}}", ct);
+            rec.Data["missingProductionCommits"] = missing;
+            rec.Data["productionHistoryOnly"] = historyOnly;
+            string delta = historyOnly
+                ? "History-only divergence: production has no net file changes relative to the common ancestor."
+                : bases.Length == 1
+                    ? "File-content divergence: production has file changes relative to the common ancestor."
+                    : "Multiple common ancestors: file-content divergence cannot be classified safely.";
+            throw new StageFailedException(
+                $"{ctx.Staging} does not contain {behind} commit(s) from current {ctx.Main} history. " +
+                "The production merge could produce a file tree different from the staging commit built and tested.\n" +
+                $"{delta}\nMissing commits:\n{missing}\n" +
+                $"Merge {ctx.Main} into {ctx.Staging}, rebuild, and rerun promotion. " +
+                (devBehind == 0
+                    ? $"{ctx.Dev} is already synchronized with {ctx.Main}."
+                    : $"Also merge {ctx.Main} into {ctx.Dev}, which is missing {devBehind} production commit(s)."));
+        }
+
         // What are we about to promote?
-        var raw = await ctx.Git.Require(ctx.Repo, ct, "log", "--no-merges",
-            "--pretty=format:%H%x1f%an%x1f%s", $"{ctx.Remote}/{ctx.Main}..HEAD");
+        var raw = await ctx.Git.Require(ctx.Repo, ct, "log",
+            "--pretty=format:%H%x1f%an%x1f%s", $"{m.MainShaBefore}..{m.StagingSha}");
         m.Commits = raw.Split('\n', StringSplitOptions.RemoveEmptyEntries)
             .Select(l => l.Split('\x1f'))
             .Where(p => p.Length == 3)
@@ -133,14 +171,6 @@ public sealed class SyncStage : ICiStage
             rec.Data["nothingToPromote"] = true;
             return;
         }
-
-        // Staging must contain main — otherwise main has hotfixes that were never
-        // back-merged and the promotion would silently drop them.
-        var behind = await ctx.Git.CountBetween(ctx.Repo, "HEAD", $"{ctx.Remote}/{ctx.Main}", ct);
-        if (behind > 0)
-            throw new StageFailedException(
-                $"{ctx.Main} has {behind} commit(s) that are not in {ctx.Staging}. " +
-                $"Back-merge {ctx.Main} into {ctx.Dev} and {ctx.Staging} first, or the promotion would discard them.");
 
         string configuredVariant = ctx.Config.GateVariant;
         string configuredTestVariant = string.IsNullOrWhiteSpace(ctx.Config.TestVariant)
@@ -556,7 +586,7 @@ public sealed class BuildStage : ICiStage
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 10. PROMOTE — main ← staging, --no-ff, tag, push
+// 10. PROMOTE — main + staging ← exact release merge, atomic push with tag
 // ─────────────────────────────────────────────────────────────────────────────
 public sealed class PromoteStage : ICiStage
 {
@@ -568,21 +598,20 @@ public sealed class PromoteStage : ICiStage
         var m = ctx.Manifest;
         await ctx.Git.EnsureIdentity(ctx.Repo, ct);
 
-        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
-        if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
+        await ValidateHeads(ctx, ct);
         var checkout = await ctx.Git.Run(
-            ctx.Repo, ct, "checkout", "--detach", $"{ctx.Remote}/{ctx.Main}");
+            ctx.Repo, ct, "checkout", "--detach", m.MainShaBefore);
         if (!checkout.Ok) throw new StageFailedException($"Could not check out {ctx.Main}:\n{checkout.Output}");
-        var sync = await ctx.Git.Run(ctx.Repo, ct, "reset", "--hard", $"{ctx.Remote}/{ctx.Main}");
+        var sync = await ctx.Git.Run(ctx.Repo, ct, "reset", "--hard", m.MainShaBefore);
         if (!sync.Ok) throw new StageFailedException($"Could not sync {ctx.Main}:\n{sync.Output}");
 
-        // Guard against a race: main moved since Sync.
-        string mainNow = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
-        if (mainNow != m.MainShaBefore)
-            throw new StageFailedException(
-                $"{ctx.Main} changed during the run ({m.MainShaBefore[..8]} → {mainNow[..8]}). Re-run to re-validate against the new head.");
-
         string tag = BuildTag(ctx);
+        if (ctx.Config.TagRelease)
+        {
+            Models.GitNames.Require(tag, "tag");
+            if ((await ctx.Git.Run(ctx.Repo, ct, "show-ref", "--verify", "--quiet", $"refs/tags/{tag}")).Ok)
+                throw new StageFailedException($"Tag {tag} already exists. Bump versionCode/versionName.");
+        }
         string msg = $"Release {tag}: merge {ctx.Staging} into {ctx.Main}\n\n" +
                      $"CI run {m.RunId}\n{m.Commits.Count} commit(s):\n" +
                      string.Join("\n", m.Commits.Take(50).Select(c => $"- {c.Sha[..8]} {c.Subject}"));
@@ -590,7 +619,9 @@ public sealed class PromoteStage : ICiStage
         if (ctx.DryRun)
         {
             rec.Status = StageStatus.Skipped;
-            rec.Summary = $"[dry-run] would merge {ctx.Staging}@{m.StagingSha[..8]} into {ctx.Main} and tag {tag}";
+            rec.Summary = $"[dry-run] would merge tested {ctx.Staging}@{m.StagingSha[..8]} into {ctx.Main}" +
+                (ctx.Config.PushMain ? $" and atomically advance {ctx.Main} and {ctx.Staging}" : " locally (no push)") +
+                (ctx.Config.TagRelease ? $" with tag {tag}" : "");
             return;
         }
 
@@ -599,39 +630,143 @@ public sealed class PromoteStage : ICiStage
 
         m.MergeSha = await ctx.Git.RevParse(ctx.Repo, "HEAD", ct);
         rec.Data["mergeSha"] = m.MergeSha;
+        string testedTree = await ctx.Git.RevParse(ctx.Repo, $"{m.StagingSha}^{{tree}}", ct);
+        string releaseTree = await ctx.Git.RevParse(ctx.Repo, $"{m.MergeSha}^{{tree}}", ct);
+        rec.Data["testedTree"] = testedTree;
+        rec.Data["releaseTree"] = releaseTree;
+        if (testedTree != releaseTree)
+            throw new StageFailedException("Release tree differs from the tested staging tree. Nothing was pushed; rebuild and retest the combined changes.");
+        string parents = await ctx.Git.Require(ctx.Repo, ct, "rev-list", "--parents", "-n", "1", m.MergeSha);
+        if (parents != $"{m.MergeSha} {m.MainShaBefore} {m.StagingSha}")
+            throw new StageFailedException("Release must be a two-parent merge of the captured production and tested staging heads. Nothing was pushed.");
         ctx.Info($"  merge commit {m.MergeSha[..8]}");
 
-        if (ctx.Config.TagRelease)
+        string? tagObject = null;
+        try
         {
-            if ((await ctx.Git.Run(ctx.Repo, ct, "rev-parse", "-q", "--verify", $"refs/tags/{tag}")).Ok)
-                throw new StageFailedException($"Tag {tag} already exists. Bump versionCode/versionName.");
-            var t = await ctx.Git.Tag(ctx.Repo, tag, $"Release {tag} (CI run {m.RunId})", ct);
-            if (!t.Ok) throw new StageFailedException($"Tagging failed:\n{t.Output}");
-            m.Tag = tag;
-            rec.Data["tag"] = tag;
+            if (ctx.Config.TagRelease)
+            {
+                var t = await ctx.Git.Tag(ctx.Repo, tag, $"Release {tag} (CI run {m.RunId})", ct);
+                if (!t.Ok) throw new StageFailedException($"Tagging failed:\n{t.Output}");
+                m.Tag = tag;
+                // Capture ownership even if cancellation arrives after tag creation.
+                using var lookup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                tagObject = await ctx.Git.RevParse(ctx.Repo, $"refs/tags/{tag}", lookup.Token);
+                rec.Data["tag"] = tag;
+                ct.ThrowIfCancellationRequested();
+            }
+            if (ctx.Config.PushMain)
+            {
+                // Gates and local merge/tag hooks may take time. Re-fetch both
+                // heads immediately before the guarded, all-or-nothing push.
+                await ValidateHeads(ctx, ct);
+                var specs = new List<string>
+                {
+                    $"{m.MergeSha}:refs/heads/{ctx.Main}",
+                    $"{m.MergeSha}:refs/heads/{ctx.Staging}"
+                };
+                var expected = new Dictionary<string, string>
+                {
+                    [$"refs/heads/{ctx.Main}"] = m.MainShaBefore,
+                    [$"refs/heads/{ctx.Staging}"] = m.StagingSha
+                };
+                if (m.Tag != null)
+                {
+                    specs.Add($"{tagObject}:refs/tags/{m.Tag}");
+                    expected[$"refs/tags/{m.Tag}"] = ""; // must not exist
+                }
+                m.ReleasePushStatus = "Unknown"; // cancellation/transport loss is not a confirmed rejection
+                var push = await ctx.Git.PushAtomic(ctx.Repo, ctx.Remote, specs, expected, ctx.GitHubToken, ct);
+                rec.Data["pushOutput"] = push.Output;
+                if (!push.Ok)
+                {
+                    await InspectPushOutcome(ctx, rec, tagObject);
+                    if (m.ReleasePushStatus != "Published")
+                        throw new StageFailedException($"Atomic release push failed ({m.ReleasePushStatus}). " +
+                            "No non-atomic fallback was attempted. Inspect remote refs before retrying.\n" + push.Output);
+                    rec.Status = StageStatus.Warning;
+                    ctx.Info("  [warn] Push reported an error, but remote refs confirm the entire release was published.");
+                }
+                m.ReleasePushStatus = "Published";
+                m.MainShaAfter = m.StagingShaAfter = m.MergeSha;
+                rec.Data["mainShaAfter"] = m.MainShaAfter;
+                rec.Data["stagingShaAfter"] = m.StagingShaAfter;
+            }
+            else m.ReleasePushStatus = "LocalOnly";
+        }
+        catch
+        {
+            if (m.ReleasePushStatus == "Unknown")
+            {
+                m.SynchronizationWarning = "Release push outcome is uncertain. Inspect production, staging, and the tag before retrying; dev may still need the release back-merge.";
+                ctx.Info($"  [warn] {m.SynchronizationWarning}");
+            }
+            // Tags are shared with the primary checkout. Remove only our exact
+            // newly created tag, and only when the release was not published.
+            if (tagObject != null && m.ReleasePushStatus is "NotAttempted" or "Rejected")
+            {
+                try
+                {
+                    using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+                    var removed = await ctx.Git.Run(ctx.Repo, cleanup.Token, "update-ref", "-d", $"refs/tags/{tag}", tagObject);
+                    if (removed.Ok) m.Tag = null;
+                    else ctx.Info($"  [warn] Could not remove unpublished local tag {tag}: {removed.Output}");
+                }
+                catch (Exception ex) { ctx.Info($"  [warn] Could not remove unpublished local tag {tag}: {ex.Message}"); }
+            }
+            throw;
+        }
+        finally
+        {
+            rec.Data["releasePushStatus"] = m.ReleasePushStatus;
         }
 
-        if (ctx.Config.PushMain)
-        {
-            var push = await Push(ctx, $"HEAD:{ctx.Main}", ct);
-            if (!push.Ok)
-            {
-                // Local main is now ahead of remote with an unpushed merge. Roll
-                // the local branch back so a re-run starts clean.
-                await ctx.Git.Run(ctx.Repo, ct, "reset", "--hard", m.MainShaBefore);
-                if (m.Tag != null) await ctx.Git.Run(ctx.Repo, ct, "tag", "-d", m.Tag);
-                throw new StageFailedException($"Push of {ctx.Main} failed (local merge reverted):\n{push.Output}");
-            }
-            if (m.Tag != null)
-            {
-                var pt = await Push(ctx, $"refs/tags/{m.Tag}", ct);
-                if (!pt.Ok) { rec.Status = StageStatus.Warning; ctx.Info($"  [warn] tag push failed: {pt.Output}"); }
-            }
-        }
-
-        rec.Summary = $"{ctx.Main} ← {ctx.Staging} merge {m.MergeSha[..8]}" +
+        rec.Summary = (ctx.Config.PushMain
+            ? $"{ctx.Main} and {ctx.Staging} → release {m.MergeSha[..8]}, pushed atomically"
+            : $"Local release {m.MergeSha[..8]}, NOT pushed; remote branches unchanged") +
                       (m.Tag != null ? $", tag {m.Tag}" : "") +
-                      (ctx.Config.PushMain ? ", pushed" : ", NOT pushed");
+                      "; release tree matches tested staging.";
+    }
+
+    private static async Task ValidateHeads(CiContext ctx, CancellationToken ct)
+    {
+        var fetch = await ctx.Git.Fetch(ctx.Repo, ctx.Remote, ctx.GitHubToken, ct);
+        if (!fetch.Ok) throw new StageFailedException($"Could not refresh {ctx.Remote}:\n{fetch.Output}");
+        foreach (var (branch, expected) in new[]
+                 { (ctx.Main, ctx.Manifest.MainShaBefore), (ctx.Staging, ctx.Manifest.StagingSha) })
+        {
+            if (!await ctx.Git.BranchExistsRemote(ctx.Repo, ctx.Remote, branch, ct))
+                throw new StageFailedException($"{branch} was removed during the run. Nothing was pushed.");
+            string actual = await ctx.Git.RevParse(ctx.Repo, $"refs/remotes/{ctx.Remote}/{branch}", ct);
+            if (actual != expected)
+                throw new StageFailedException($"{branch} changed during the run ({expected} → {actual}). " +
+                    "Nothing was pushed. Rerun all gates against the new heads.");
+        }
+        if (await ctx.Git.CountBetween(ctx.Repo, ctx.Manifest.StagingSha, ctx.Manifest.MainShaBefore, ct) != 0)
+            throw new StageFailedException($"{ctx.Staging} must contain current {ctx.Main} before promotion. Synchronize, rebuild, and retest.");
+    }
+
+    private static async Task InspectPushOutcome(CiContext ctx, StageRecord rec, string? tagObject)
+    {
+        try
+        {
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+            var refs = await ctx.Git.ReadRemoteRefs(ctx.Repo, ctx.Remote, ctx.GitHubToken, timeout.Token);
+            string? main = refs.GetValueOrDefault($"refs/heads/{ctx.Main}");
+            string? staging = refs.GetValueOrDefault($"refs/heads/{ctx.Staging}");
+            string? tag = ctx.Manifest.Tag is { } name ? refs.GetValueOrDefault($"refs/tags/{name}") : null;
+            rec.Data["observedMainSha"] = main;
+            rec.Data["observedStagingSha"] = staging;
+            rec.Data["observedTagObject"] = tag;
+            var m = ctx.Manifest;
+            if (main == m.MergeSha && staging == m.MergeSha && tag == tagObject)
+                m.ReleasePushStatus = "Published";
+            else if (main == m.MainShaBefore && staging == m.StagingSha && (tagObject == null || tag != tagObject))
+                m.ReleasePushStatus = "Rejected";
+            // Partial or subsequently moved heads remain Unknown. They might be
+            // descendants of a published release, especially with tagging off.
+        }
+        catch (Exception ex) { rec.Data["pushVerificationError"] = ex.Message; }
     }
 
     private static string BuildTag(CiContext ctx)
@@ -643,20 +778,6 @@ public sealed class PromoteStage : ICiStage
             : $"{ctx.Config.TagPrefix}{name}-{m.StagingSha[..8]}";
     }
 
-    internal static async Task<GitResult> Push(CiContext ctx, string refspec, CancellationToken ct)
-    {
-        bool https = true;
-        try
-        {
-            var url = (await ctx.Git.Run(ctx.Repo, ct, "remote", "get-url", ctx.Remote)).Output;
-            https = url.StartsWith("https://", StringComparison.OrdinalIgnoreCase);
-        }
-        catch { }
-
-        return https && !string.IsNullOrWhiteSpace(ctx.GitHubToken)
-            ? await ctx.Git.PushWithToken(ctx.Repo, ctx.Profile.GitHubOwner, ctx.Profile.GitHubRepo, ctx.GitHubToken, refspec, ct)
-            : await ctx.Git.Push(ctx.Repo, ctx.Remote, refspec, ct);
-    }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -668,6 +789,32 @@ public sealed class BackMergeStage : ICiStage
     public bool ShouldRun(CiContext ctx) => ctx.Config.BackMergeToDev && ctx.Config.PromoteToMain;
 
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
+    {
+        string releaseState = ctx.Manifest.ReleasePushStatus == "Published"
+            ? $"Production ({ctx.Main}) and {ctx.Staging} were published successfully."
+            : "The release exists only locally; remote release branches were not changed.";
+        try { await MergeAsync(ctx, rec, ct); }
+        catch (OperationCanceledException)
+        {
+            ctx.Manifest.SynchronizationWarning = $"{releaseState} {ctx.Dev} back-merge was cancelled; inspect dev before retrying.";
+            ctx.Info($"  [warn] {ctx.Manifest.SynchronizationWarning}");
+            throw;
+        }
+        catch (Exception ex)
+        {
+            rec.Status = StageStatus.Warning;
+            rec.Summary = $"{ctx.Dev} back-merge failed: {ex.Message}";
+        }
+        if (rec.Status == StageStatus.Warning)
+        {
+            rec.Summary = $"{releaseState} {rec.Summary} " +
+                $"Resolve/push the exact release {ctx.Manifest.MergeSha} into {ctx.Dev}; do not rerun the release push.";
+            ctx.Manifest.SynchronizationWarning = rec.Summary;
+            ctx.Info($"  [warn] {rec.Summary}");
+        }
+    }
+
+    private static async Task MergeAsync(CiContext ctx, StageRecord rec, CancellationToken ct)
     {
         var m = ctx.Manifest;
         if (ctx.DryRun) { rec.Status = StageStatus.Skipped; rec.Summary = $"[dry-run] would merge {ctx.Main} into {ctx.Dev}"; return; }
@@ -684,10 +831,8 @@ public sealed class BackMergeStage : ICiStage
             $"Back-merge {ctx.Main} ({m.Tag ?? m.MergeSha?[..8]}) into {ctx.Dev}\n\nCI run {m.RunId}", ct);
         if (!merge.Ok)
         {
-            // A conflict here means dev diverged in a way a human must resolve.
-            // main is already promoted and pushed — that is the important part.
             rec.Status = StageStatus.Warning;
-            rec.Summary = $"CONFLICT merging {ctx.Main} into {ctx.Dev}. Main was promoted; resolve the back-merge manually.";
+            rec.Summary = $"CONFLICT merging the release into {ctx.Dev}.";
             rec.Data["conflict"] = merge.Output;
             ctx.Info($"  [warn] {rec.Summary}");
             return;
@@ -698,13 +843,16 @@ public sealed class BackMergeStage : ICiStage
 
         if (ctx.Config.PushMain)
         {
-            var push = await PromoteStage.Push(ctx, $"HEAD:{ctx.Dev}", ct);
+            var push = await ctx.Git.PushToRemote(ctx.Repo, ctx.Remote,
+                $"{m.BackMergeSha}:refs/heads/{ctx.Dev}", ctx.GitHubToken, ct);
             if (!push.Ok)
             {
                 rec.Status = StageStatus.Warning;
                 rec.Summary = $"Back-merge committed locally but push of {ctx.Dev} failed:\n{push.Output}";
                 return;
             }
+            m.DevShaAfter = m.BackMergeSha;
+            rec.Data["devShaAfter"] = m.DevShaAfter;
         }
         rec.Summary = $"{ctx.Dev} ← {ctx.Main} merge {m.BackMergeSha[..8]}" +
                       (ctx.Config.PushMain ? ", pushed." : ", NOT pushed.");

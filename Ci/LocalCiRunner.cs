@@ -194,15 +194,25 @@ public sealed class LocalCiRunner
             {
                 manifest.Success = true;
                 manifest.Result = dryRun ? "Dry run passed all gates"
+                    : manifest.ReleasePushStatus == "LocalOnly" ? $"Local release prepared ({manifest.MergeSha?[..8]}); NOT pushed"
                     : manifest.Tag != null ? $"Promoted {manifest.Tag}"
                     : manifest.MergeSha != null ? $"Promoted {manifest.MergeSha[..8]}"
                     : "All gates passed";
+                if (manifest.SynchronizationWarning != null)
+                    manifest.Result += " — dev synchronization needs attention";
             }
         }
         catch (OperationCanceledException)
         {
             manifest.Success = false;
-            manifest.Result = "Cancelled";
+            manifest.Result = manifest.ReleasePushStatus switch
+            {
+                "Published" => "Release published to production and staging; remaining run cancelled — inspect dev synchronization",
+                "Unknown" => "Cancelled during release push; remote outcome unknown — inspect refs before retrying",
+                _ => "Cancelled"
+            };
+            if (manifest.ReleasePushStatus is "Published" or "Unknown")
+                manifest.SynchronizationWarning ??= manifest.Result;
             throw;
         }
         finally

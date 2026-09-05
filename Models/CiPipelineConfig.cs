@@ -2,7 +2,8 @@ namespace AndroidCommandCenter.Models;
 
 /// <summary>
 /// The local CI/CD promotion pipeline: dev → staging → production, then
-/// back-merge production → dev. Merges are --no-ff so every release is one
+/// advance staging to the exact release and back-merge production → dev.
+/// Merges are --no-ff so every release is one
 /// revertable commit.
 /// </summary>
 public sealed class CiPipelineConfig
@@ -34,6 +35,7 @@ public sealed class CiPipelineConfig
 
     // Promotion
     public bool PromoteToMain { get; set; } = true;
+    /// <summary>Atomically publish production, staging, and the optional tag; then push dev's back-merge.</summary>
     public bool PushMain { get; set; } = true;
     public bool TagRelease { get; set; } = true;
     public string TagPrefix { get; set; } = "v";

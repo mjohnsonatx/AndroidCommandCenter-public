@@ -42,23 +42,67 @@ staging, and production branches. A run performs these stages in order:
 3. Optional version-code, secret, checksum, lint, unit-test, and emulator-only
    instrument-test gates.
 4. Build of the configured Android variant and APK SHA-256 recording.
-5. A no-fast-forward staging-to-production merge, optional release tag, and push.
-6. A no-fast-forward production-to-development back-merge.
+5. A no-fast-forward staging-to-production merge; production, staging, and the
+   optional release tag are pushed together atomically.
+6. A no-fast-forward back-merge of that exact release into development. Dev-only
+   work is never copied to staging.
 
 Use **Validate Promotion (Dry Run)** before enabling a real promotion. Runs use
 a per-repository lock and an isolated Git worktree under the application cache,
 so the selected developer checkout is never switched, reset, cleaned, or
-stashed. Main-branch movement is checked again immediately before promotion;
-concurrent remote changes cause a safe failure instead of an overwrite. The
-pipeline never force-pushes.
+stashed. Both production and staging are checked again before creating the
+release and immediately before pushing. A temporary pre-push guard verifies the
+server's advertised heads (and runs any existing pre-push hook); Git checks them
+again when updating the refs. The pipeline never force-pushes or falls back to
+separate release pushes if atomic updates are unsupported or rejected.
+
+Successful promotion leaves production and staging at the **same release merge
+SHA**. The release tree is verified against the exact staging tree that passed
+the gates, so synchronizing staging changes history, not files. This prevents
+the next run from rejecting the release merge created by the previous run.
+
+### Stale staging and synchronization recovery
+
+Staging must contain all current production history **before** the gates run.
+An ordinary merge would retain production commits, but could introduce untested
+content into the release. The ancestry error distinguishes history-only gaps
+from net production file changes since the common ancestor, lists missing
+commits, and recommends updating dev only when dev is also behind.
+
+For an older release that left staging behind, merge the current production
+branch (`master` or `main`, as configured) into staging in a clean checkout or
+through a pull request. Resolve any conflicts, push normally, and rerun the full
+gates. Do not bypass the ancestry gate even for a history-only gap. Do not merge
+dev into staging just to repair release history; dev may contain unfinished work.
+
+An atomic rejection (including staging protection or tag collisions) leaves all
+release refs unchanged by this push. Fix the reported rejection and validate
+again. After a lost connection/cancellation, inspect the remote first: the push
+may have completed. The manifest records `ReleasePushStatus`, tested
+`StagingSha`, `MainShaBefore`, `MergeSha`, confirmed `MainShaAfter` and
+`StagingShaAfter`, `BackMergeSha`, `DevShaAfter`, and any synchronization warning.
+An `Unknown` outcome retains local release evidence and must not be blindly retried.
+
+If production and staging succeeded but dev failed, the release is already
+published. Merge the manifest's exact `MergeSha` into current dev, resolve any
+conflict, and push dev normally (or use a PR). Do not repeat the release or move
+staging to dev's back-merge commit. With **Push promoted branches** disabled,
+commits/tags are local only and the log explicitly says no remote branches moved.
+
+Run the isolated Git-graph regression suite (no Android SDK or network needed):
+
+```bash
+dotnet run --project tests/PromotionGraphTests/PromotionGraphTests.csproj
+```
 
 Every long-running GUI operation exposes an Abort button in both the top status
 area and the sidebar. Aborting cancels the operation token and terminates the
 entire Gradle/ADB/Git/Firebase child process tree. Single Gradle actions show an
 active `1 of 1` status; workflows, dry runs, and promotion runs show the current
 phase as `n of y`. Completed test phases also report passed, failed, skipped,
-and total test counts. An aborted run does not start a new Gradle daemon-cleanup
-command afterward.
+and total test counts. Promotion cleanup has an independent, bounded timeout:
+it stops Gradle daemons and removes the isolated worktree even after cancellation,
+preserving run records, recorded artifacts, and generated commit references.
 
 ### Release tags
 

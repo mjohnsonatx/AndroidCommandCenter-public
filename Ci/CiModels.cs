@@ -82,7 +82,12 @@ public sealed class CiRunManifest
     public string StagingSha { get; set; } = "";
     public string MainShaBefore { get; set; } = "";            // rollback target (reset) / sanity check
     public string? MergeSha { get; set; }                      // what `git revert -m 1` takes
+    public string? MainShaAfter { get; set; }                  // confirmed remote release head
+    public string? StagingShaAfter { get; set; }               // same release head, NOT dev's merge
+    public string ReleasePushStatus { get; set; } = "NotAttempted"; // Published | Rejected | Unknown | LocalOnly
+    public string? SynchronizationWarning { get; set; }
     public string? BackMergeSha { get; set; }
+    public string? DevShaAfter { get; set; }                   // confirmed pushed back-merge
     public string? Tag { get; set; }
     public int? VersionCode { get; set; }
     public string? VersionName { get; set; }
