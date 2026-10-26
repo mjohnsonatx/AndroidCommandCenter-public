@@ -202,15 +202,15 @@ public sealed class AndroidService
     // project's normal per-build-type keys so a test install never changes the
     // certificate on the attached device.
     public Task<int> RunUnitTests(CancellationToken ct) =>
-        RunUnitTests(ct, forceRerun: false);
+        RunUnitTests(ct, forceTestRerun: false);
 
-    public Task<int> RunUnitTests(CancellationToken ct, bool forceRerun)
+    public Task<int> RunUnitTests(CancellationToken ct, bool forceTestRerun)
     {
         var args = GradleArgs($"test{VerificationVariant}UnitTest");
-        // Gradle may restore cached outputs. Force only CI test
-        // executions so the report parser receives fresh JUnit XML instead of
-        // accidentally accepting (or rejecting) an old UP-TO-DATE result.
-        if (forceRerun) args.Add("--rerun-tasks");
+        // --rerun is a task-specific option and must immediately follow the task name.
+        // Unlike --rerun-tasks, it does not force compilation and generated-resource
+        // dependencies to execute again just to obtain fresh JUnit XML for this run.
+        if (forceTestRerun) args.Insert(1, "--rerun");
         return RunGradle(args, ct);
     }
 

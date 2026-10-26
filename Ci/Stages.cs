@@ -499,7 +499,7 @@ public sealed class UnitTestStage : ICiStage
     public async Task RunAsync(CiContext ctx, StageRecord rec, StageOutput _, CancellationToken ct)
     {
         var at = DateTime.Now;
-        int code = await ctx.Android.RunUnitTests(ct, forceRerun: true);
+        int code = await ctx.Android.RunUnitTests(ct, forceTestRerun: true);
         var rpt = ctx.TestReports.ParseResults(ctx.ProjectPath, "UnitTests", at);
 
         rec.ExitCode = code;

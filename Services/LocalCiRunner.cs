@@ -253,7 +253,7 @@ public sealed class LocalCiRunner
                 await Stage(m, log, "Unit tests", async st =>
                 {
                     var at = DateTime.Now;
-                    int code = await android.RunUnitTests(ct, forceRerun: true);
+                    int code = await android.RunUnitTests(ct, forceTestRerun: true);
                     var rpt = _testReports.ParseResults(wt, "UnitTests", at);
 
                     st.ExitCode = code;
