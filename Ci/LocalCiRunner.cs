@@ -174,11 +174,12 @@ public sealed class LocalCiRunner
                 catch (Exception ex)
                 {
                     rec.Status = StageStatus.Failed; rec.FinishedAt = DateTime.UtcNow;
-                    rec.Summary = FirstLine(ex.Message);
-                    rec.Failure = output.Extract(ex.Message, ex is StageFailedException ? null : ex);
+                    rec.Failure = output.Extract(ex.Message, ex);
+                    rec.Failure.LogPath = manifest.LogPath;
+                    rec.Summary = rec.Failure.GetSummary();
                     manifest.FailedStage = stage.Name;
                     manifest.Result = $"Failed: {stage.Name} — {rec.Summary}";
-                    ctx.Info($"   ✖ {ex.Message}");
+                    ctx.Info($"   ✖ {rec.Summary}");
                     logger.Line(rec.Failure.ToString());
                     break;
                 }
@@ -327,8 +328,6 @@ public sealed class LocalCiRunner
                 "Another CI/CD run is already active for this project. Wait for it to finish or cancel it first.", ex);
         }
     }
-
-    private static string FirstLine(string s) => s.Split('\n')[0].Trim();
 
     private static void PreserveRecordedArtifacts(CiRunManifest manifest, string worktreePath)
     {

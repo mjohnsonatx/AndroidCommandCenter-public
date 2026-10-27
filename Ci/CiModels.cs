@@ -18,27 +18,53 @@ public sealed class StageRecord
     public string Summary { get; set; } = "";
     /// <summary>Structured facts for alerting (counts, SHAs, paths).</summary>
     public Dictionary<string, object?> Data { get; set; } = new();
-    /// <summary>±50 lines around the first error marker, populated only on failure.</summary>
+    /// <summary>Tool diagnostics and surrounding output, populated only on failure.</summary>
     public FailureContext? Failure { get; set; }
 }
 
 public sealed class FailureContext
 {
     public string Message { get; set; } = "";
+    public string? Command { get; set; }
+    public string? LogPath { get; set; }
+    public List<string> FailedTasks { get; set; } = new();
+    public List<string> Locations { get; set; } = new();
+    public List<string> Problems { get; set; } = new();
+    public List<string> Causes { get; set; } = new();
+    /// <summary>Exception emitted by the external tool, separate from the .NET exception.</summary>
+    public string? ToolException { get; set; }
     public int? ErrorLineIndex { get; set; }
     public List<string> Before { get; set; } = new();
     public string? ErrorLine { get; set; }
     public List<string> After { get; set; } = new();
     public string? Exception { get; set; }
 
+    public string GetSummary()
+    {
+        string? reason = Problems.FirstOrDefault(l => l.TrimStart().StartsWith('>'))
+            ?.TrimStart().TrimStart('>').Trim();
+        reason ??= Problems.FirstOrDefault() ?? Causes.LastOrDefault();
+        if (reason is null) return Message.Split('\n')[0].TrimEnd('\r');
+        string summary = FailedTasks.Count > 0 ? $"{string.Join(", ", FailedTasks)}: {reason}" : reason;
+        // Keep progress/toast text bounded; complete diagnostics remain in the failure details.
+        return summary.Length <= 600 ? summary : summary[..600] + "... (see failure details)";
+    }
+
     public override string ToString()
     {
         var sb = new System.Text.StringBuilder();
         sb.AppendLine(Message);
+        if (Command != null) sb.AppendLine("Command: " + Command);
+        if (LogPath != null) sb.AppendLine("Full log: " + LogPath);
+        if (FailedTasks.Count > 0) sb.AppendLine("Failed tasks: " + string.Join(", ", FailedTasks));
+        if (Locations.Count > 0) { sb.AppendLine("--- location ---"); Locations.ForEach(l => sb.AppendLine(l)); }
+        if (Problems.Count > 0) { sb.AppendLine("--- what went wrong ---"); Problems.ForEach(l => sb.AppendLine(l)); }
+        if (Causes.Count > 0) { sb.AppendLine("--- causes ---"); Causes.ForEach(l => sb.AppendLine(l)); }
+        if (ToolException != null) { sb.AppendLine("--- tool exception ---"); sb.AppendLine(ToolException); }
         if (Before.Count > 0) { sb.AppendLine("--- before ---"); Before.ForEach(l => sb.AppendLine(l)); }
         if (ErrorLine != null) { sb.AppendLine(">>> " + ErrorLine); }
         if (After.Count > 0) { sb.AppendLine("--- after ---"); After.ForEach(l => sb.AppendLine(l)); }
-        if (Exception != null) { sb.AppendLine("--- exception ---"); sb.AppendLine(Exception); }
+        if (Exception != null) { sb.AppendLine("--- command center exception ---"); sb.AppendLine(Exception); }
         return sb.ToString();
     }
 }
@@ -98,6 +124,10 @@ public sealed class CiRunManifest
     public string ManifestPath { get; set; } = "";
 
     [JsonIgnore] public StageRecord? CurrentStage => Stages.LastOrDefault(s => s.Status == StageStatus.Running);
+    // Cleanup warnings must not replace the failure that stopped the promotion.
+    [JsonIgnore] public FailureContext? PrimaryFailure =>
+        Stages.FirstOrDefault(s => s.Name == FailedStage && s.Failure != null)?.Failure
+        ?? Stages.LastOrDefault(s => s.Failure != null)?.Failure;
 }
 
 public sealed class StageFailedException(string message, Exception? inner = null) : Exception(message, inner);

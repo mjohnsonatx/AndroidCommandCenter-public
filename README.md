@@ -89,7 +89,7 @@ conflict, and push dev normally (or use a PR). Do not repeat the release or move
 staging to dev's back-merge commit. With **Push promoted branches** disabled,
 commits/tags are local only and the log explicitly says no remote branches moved.
 
-Run the isolated Git-graph regression suite (no Android SDK or network needed):
+Run the isolated promotion and failure-diagnostic regression suite (no Android SDK or network needed):
 
 ```bash
 dotnet run --project tests/PromotionGraphTests/PromotionGraphTests.csproj
@@ -103,6 +103,13 @@ phase as `n of y`. Completed test phases also report passed, failed, skipped,
 and total test counts. Promotion cleanup has an independent, bounded timeout:
 it stops Gradle daemons and removes the isolated worktree even after cancellation,
 preserving run records, recorded artifacts, and generated commit references.
+
+Failure details retain Gradle's failed task names, build-file location, `What
+went wrong` explanation, causal exceptions, and a bounded tool stack trace in
+addition to the surrounding console output. Long asset listings cannot displace
+the actual error. The run summary shows the task and reason; full details and the
+complete log path remain in the saved manifest after the worktree is removed.
+Cleanup warnings do not replace the primary failure in GUI or CLI diagnostics.
 
 ### Release tags
 

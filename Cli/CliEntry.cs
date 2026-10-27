@@ -110,7 +110,7 @@ public static class CliEntry
                     Console.WriteLine($"Manifest: {m.ManifestPath}");
                     Console.WriteLine($"Log:      {m.LogPath}");
                     Console.WriteLine(m.Success ? $"✔ {m.Result}" : $"✖ {m.Result}");
-                    if (!m.Success && m.Stages.LastOrDefault(s => s.Failure != null)?.Failure is { } f)
+                    if (!m.Success && m.PrimaryFailure is { } f)
                     { Console.WriteLine(); Console.WriteLine(f.ToString()); }
                     return m.Success ? 0 : 1;
                 }

@@ -4,7 +4,7 @@ using AndroidCommandCenter.Services;
 using Manifest = AndroidCommandCenter.Ci.CiRunManifest;
 
 // Dependency-free integration runner: real Git repositories, hooks and atomic
-// receive transactions, not mocked command strings. No Android tasks or network.
+// receive transactions. No Android tasks or network.
 string suiteRoot = Directory.CreateTempSubdirectory("acc-promotion-graphs-").FullName;
 string emptyConfig = Path.Combine(suiteRoot, "gitconfig");
 File.WriteAllText(emptyConfig, "");
@@ -32,7 +32,7 @@ var tests = new (string Name, Func<Task> Run)[]
     ("narrow fetch refspec cannot leave stale branch refs", NarrowFetch),
     ("merge-only staging history is not a false no-op", MergeOnly),
     ("release tree modified by merge hook is rejected", ChangedTree),
-    ("push validation rejects force, deletion and wildcard specs", UnsafeRefspecs)
+    ("push validation rejects force, deletion and wildcard specs", UnsafeRefspecs),
 };
 int failed = 0;
 foreach (var (name, run) in tests)
@@ -40,7 +40,7 @@ foreach (var (name, run) in tests)
     try { await run(); Console.WriteLine($"PASS {name}"); }
     catch (Exception ex) { failed++; Console.Error.WriteLine($"FAIL {name}\n{ex}"); }
 }
-Console.WriteLine($"{tests.Length - failed}/{tests.Length} promotion graph tests passed. Fixtures: {suiteRoot}");
+Console.WriteLine($"{tests.Length - failed}/{tests.Length} promotion tests passed. Fixtures: {suiteRoot}");
 return failed == 0 ? 0 : 1;
 
 async Task<Fixture> New(bool stagingChange = true) => await Fixture.Create(suiteRoot, stagingChange);

@@ -2158,7 +2158,7 @@ public partial class MainWindow : Window
                     actionLabel: "Open runs", action: () => OpenDir(Paths.CiRuns));
             else
             {
-                string? details = manifest.Stages.LastOrDefault(s => s.Failure != null)?.Failure?.ToString();
+                string? details = manifest.PrimaryFailure?.ToString();
                 _toasts.Error("Promotion CI failed", manifest.Result, details,
                     actionLabel: "Open runs", action: () => OpenDir(Paths.CiRuns));
             }
