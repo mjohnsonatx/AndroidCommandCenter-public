@@ -168,3 +168,25 @@ dotnet run -- rollback --project /path/to/android-project --push --yes \
 Rollback creates a new `git revert -m 1` commit and an audit tag; it does not
 rewrite history. When configured, the rollback is also back-merged into the
 development branch. A recorded rollback cannot be applied twice.
+
+## Public source copy
+
+This repository preserves the selected development history with normalized
+author metadata. IDE state and the application-specific diagnostic test fixture
+have been removed from every exported revision. Local credentials, profiles,
+runtime logs, cached worktrees, and generated binaries are not included.
+
+The CI implementations remain available for review and refactoring. The
+`promotion-baseline` branch precedes the atomic-promotion changes;
+`promotion-hardening` contains those changes and remains in `main`'s history.
+
+The focused promotion checks run against temporary local Git repositories and
+do not require an Android SDK, device, Firebase project, or signing credentials:
+
+```bash
+dotnet run --project tests/PromotionGraphTests/PromotionGraphTests.csproj -c Release
+```
+
+## License
+
+Copyright (c) 2026 mjohnsonatx. Licensed under the [MIT License](LICENSE).
